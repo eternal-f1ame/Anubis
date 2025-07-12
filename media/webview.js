@@ -5,7 +5,10 @@
     const wrap = document.getElementById('canvasWrap');
     const labelSelect = document.getElementById('labelSelect');
     const sidebar = document.getElementById('sidebar');
-    const modeBtn = document.getElementById('modeBtn');
+    const drawBtn = document.getElementById('drawModeBtn');
+    const selectBtn = document.getElementById('selectModeBtn');
+    const moveBtn = document.getElementById('moveModeBtn');
+    const modeButtons = { draw: drawBtn, select: selectBtn, move: moveBtn };
     const deleteBtn = document.getElementById('deleteBtn');
     const saveBtn = document.getElementById('saveBtn');
     const addClassBtn = document.getElementById('addClassBtn');
@@ -73,19 +76,20 @@
         canvas.requestRenderAll();
     });
 
-    let mode = 'draw';
+    let mode = 'move';
     let drawing = false,
         rect, startX, startY;
 
-    // Mode cycling helper
-    modeBtn.addEventListener('click', () => {
-        const next = mode === 'draw' ? 'select' : (mode === 'select' ? 'move' : 'draw');
-        setMode(next);
-    });
+    // Mode buttons listeners
+    drawBtn.addEventListener('click', () => setMode('draw'));
+    selectBtn.addEventListener('click', () => setMode('select'));
+    moveBtn.addEventListener('click', () => setMode('move'));
 
     function setMode(newMode) {
         mode = newMode;
-        modeBtn.textContent = 'Mode: ' + newMode.charAt(0).toUpperCase() + newMode.slice(1);
+        // update button highlight
+        Object.values(modeButtons).forEach(b => b.classList.remove('active'));
+        modeButtons[newMode].classList.add('active');
         canvas.selection = newMode === 'select';
         // Re-apply selection behaviour each time we toggle so that
         // partial-overlap marquee selection keeps working even after
@@ -150,7 +154,7 @@
         });
         sidebar.innerHTML = Object.entries(counts).map(([name, count]) => {
             const col = colorForLabel(name);
-            return '<div style="display:flex;align-items:center;gap:4px;margin:2px 0;"><span style="width:12px;height:12px;background:' + col + ';display:inline-block;border-radius:50%;"></span>' + name + ' ' + count + '</div>';
+            return `<div class="sidebar-item"><span class="color-dot" style="background:${col}"></span>${name} ${count}</div>`;
         }).join('');
     }
 
@@ -195,7 +199,16 @@
         // if the rect is too small, delete it
         if (rect.width < 10 || rect.height < 10) {
             canvas.remove(rect);
+            return;
         }
+
+        // Ensure coordinates are up-to-date for accurate selection hit-testing
+        rect.setCoords();
+        // Automatically select the newly created rectangle
+        canvas.setActiveObject(rect);
+        deleteBtn.disabled = false;
+        updateCounts();
+        canvas.requestRenderAll();
     });
 
     canvas.on('selection:created', syncToolbar);
@@ -349,9 +362,8 @@
         }
     });
 
-    // Ensure initial tool state is correctly applied so that marquee
-    // selection behaviour is configured right from the beginning.
-    setMode('draw');
+    // Ensure initial tool state is correctly applied to default (Move) mode.
+    setMode('move');
 
     // Zoom in/out with Ctrl + Mouse wheel, centred on cursor
     canvas.on('mouse:wheel', opt => {

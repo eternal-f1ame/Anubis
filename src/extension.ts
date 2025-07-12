@@ -20,6 +20,7 @@ function getWebviewContent(
 ): string {
     const fabricCdn = 'https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js';
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'webview.js'));
+    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'webview.css'));
     const htmlPath = vscode.Uri.joinPath(extensionUri, 'media', 'webview.html');
     let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
 
@@ -30,6 +31,7 @@ function getWebviewContent(
     html = html.replace(/\${nonce}/g, nonce);
     html = html.replace(/\${fabricCdn}/g, fabricCdn);
     html = html.replace(/\${webviewScript}/g, scriptUri.toString());
+    html = html.replace(/\${webviewStylesheet}/g, styleUri.toString());
 
     // Inject data into the webview
     html = html.replace(
