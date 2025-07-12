@@ -19,9 +19,14 @@
 
     labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
 
-    const canvas = new fabric.Canvas(canvasEl, { selection: false });
+    // Start with group selection support ON – we will toggle it for draw mode immediately after.
+    const canvas = new fabric.Canvas(canvasEl, { selection: true });
     canvas.perPixelTargetFind = false;
     canvas.selectionFullyContained = false;
+
+    // ---------- Zoom & pan config ----------
+    const MIN_ZOOM = 0.1;
+    const MAX_ZOOM = 10;
 
     function showLabelPicker(x, y, target) {
         const sel = document.createElement('select');
@@ -52,23 +57,87 @@
         canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
         canvas.setWidth(img.width);
         canvas.setHeight(img.height);
-        wrap.style.width = img.width + 'px';
-        wrap.style.height = img.height + 'px';
+
+        // Fit the image inside the available viewport on first load
+        const scale = Math.min(wrap.clientWidth / img.width, wrap.clientHeight / img.height, 1);
+        canvas.setZoom(scale);
+        const vpt = canvas.viewportTransform;
+        vpt[4] = (wrap.clientWidth - img.width * scale) / 2;
+        vpt[5] = (wrap.clientHeight - img.height * scale) / 2;
+
+        // Adjust wrapper dimensions so scrollbars reflect zoomed size
+        const dispW = img.width * scale;
+        const dispH = img.height * scale;
+        wrap.style.width = dispW + 'px';
+        wrap.style.height = dispH + 'px';
+        canvas.requestRenderAll();
     });
 
     let mode = 'draw';
     let drawing = false,
         rect, startX, startY;
 
+    // Mode cycling helper
+    modeBtn.addEventListener('click', () => {
+        const next = mode === 'draw' ? 'select' : (mode === 'select' ? 'move' : 'draw');
+        setMode(next);
+    });
+
     function setMode(newMode) {
         mode = newMode;
         modeBtn.textContent = 'Mode: ' + newMode.charAt(0).toUpperCase() + newMode.slice(1);
         canvas.selection = newMode === 'select';
+        // Re-apply selection behaviour each time we toggle so that
+        // partial-overlap marquee selection keeps working even after
+        // switching modes.
+        canvas.selectionFullyContained = false;
+        canvas.perPixelTargetFind = false;
         canvas.discardActiveObject();
         deleteBtn.disabled = true;
+
+        // Update cursor cues
+        if (newMode === 'move') {
+            wrap.style.cursor = 'grab';
+        } else if (newMode === 'draw') {
+            wrap.style.cursor = 'crosshair';
+        } else {
+            wrap.style.cursor = 'default';
+        }
     }
 
-    modeBtn.addEventListener('click', () => setMode(mode === 'draw' ? 'select' : 'draw'));
+    // ----------------------------------
+    // Pan (move) implementation
+    // ----------------------------------
+    let panning = false, panStartX = 0, panStartY = 0, startVpt;
+
+    wrap.addEventListener('mousedown', e => {
+        if (mode !== 'move' || e.button !== 0) return; // left button only
+        panning = true;
+        wrap.style.cursor = 'grabbing';
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+        startVpt = canvas.viewportTransform.slice(); // clone current VPT
+        e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', e => {
+        if (!panning) return;
+        const dx = e.clientX - panStartX;
+        const dy = e.clientY - panStartY;
+        const vpt = startVpt.slice();
+        vpt[4] += dx;
+        vpt[5] += dy;
+        canvas.setViewportTransform(vpt);
+        // refresh coords so hit-testing & marquee selection stay accurate
+        canvas.forEachObject(obj => obj.setCoords());
+        canvas.requestRenderAll();
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (!panning) return;
+        panning = false;
+        wrap.style.cursor = 'grab';
+    });
 
     function colorForLabel(name) {
         return labelMap[name] || '#ff0000';
@@ -86,7 +155,7 @@
     }
 
     canvas.on('mouse:down', opt => {
-        if (mode !== 'draw') return;
+        if (mode !== 'draw') {return;}
         const ptr = canvas.getPointer(opt.e);
         drawing = true;
         startX = ptr.x;
@@ -108,7 +177,7 @@
     });
 
     canvas.on('mouse:move', opt => {
-        if (!drawing) return;
+        if (!drawing) {return;}
         const p = canvas.getPointer(opt.e);
         const w = p.x - startX,
             h = p.y - startY;
@@ -123,6 +192,10 @@
 
     canvas.on('mouse:up', () => {
         drawing = false;
+        // if the rect is too small, delete it
+        if (rect.width < 10 || rect.height < 10) {
+            canvas.remove(rect);
+        }
     });
 
     canvas.on('selection:created', syncToolbar);
@@ -212,7 +285,7 @@
             delete labelMap[msg.oldName];
             labelMap[msg.newName] = oldColor;
             labelArray.forEach(l => {
-                if (l.name === msg.oldName) l.name = msg.newName;
+                if (l.name === msg.oldName) {l.name = msg.newName;}
             });
             updateCounts();
         } else if (msg.type === 'labelDeleted') {
@@ -232,17 +305,24 @@
     });
 
     window.addEventListener('keydown', e => {
-        if (e.key === 'Delete' && !deleteBtn.disabled) deleteBtn.click();
+        if (e.key === 'Delete' && !deleteBtn.disabled) {deleteBtn.click();}
     });
 
+    // Save annotations using relative coordinates so they are robust to image resizing
     saveBtn.addEventListener('click', () => {
+        // Determine current image dimensions
+        const imgW = canvas.backgroundImage ? canvas.backgroundImage.width : canvas.getWidth();
+        const imgH = canvas.backgroundImage ? canvas.backgroundImage.height : canvas.getHeight();
+
         const annotations = canvas.getObjects('rect').map(r => ({
             label: r.label,
-            x: r.left,
-            y: r.top,
-            width: r.width,
-            height: r.height
+            // Normalize coordinates and size
+            x: r.left / imgW,
+            y: r.top / imgH,
+            width: r.width / imgW,
+            height: r.height / imgH
         }));
+
         vscode.postMessage({
             type: 'saveAnnotation',
             annotation: annotations
@@ -267,5 +347,28 @@
             const bbox = canvas.upperCanvasEl.getBoundingClientRect();
             showLabelPicker(e.clientX - bbox.left, e.clientY - bbox.top, rect);
         }
+    });
+
+    // Ensure initial tool state is correctly applied so that marquee
+    // selection behaviour is configured right from the beginning.
+    setMode('draw');
+
+    // Zoom in/out with Ctrl + Mouse wheel, centred on cursor
+    canvas.on('mouse:wheel', opt => {
+        if (!opt.e.ctrlKey) {
+            return; // let normal scroll behaviour happen
+        }
+        let delta = opt.e.deltaY;
+        let zoom = canvas.getZoom();
+        // Using exponential factor for smooth zooming
+        zoom *= Math.pow(0.999, delta);
+        if (zoom > MAX_ZOOM) zoom = MAX_ZOOM;
+        if (zoom < MIN_ZOOM) zoom = MIN_ZOOM;
+
+        const ptr = canvas.getPointer(opt.e);
+        canvas.zoomToPoint(new fabric.Point(ptr.x, ptr.y), zoom);
+        canvas.forEachObject(obj => obj.setCoords());
+        opt.e.preventDefault();
+        opt.e.stopPropagation();
     });
 })();

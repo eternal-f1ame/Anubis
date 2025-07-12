@@ -183,7 +183,47 @@ export function activate(context: vscode.ExtensionContext) {
             labels
         );
 
-        // ... (rest of your onDidReceiveMessage handler)
+        // Message handler for webview interactions
+        panel.webview.onDidReceiveMessage(async (msg) => {
+            switch (msg.type) {
+                case 'requestAddLabel': {
+                    const labelName = await vscode.window.showInputBox({ prompt: 'New label name' });
+                    if (!labelName) { return; }
+                    const { name, color } = await addLabelToProject(project, labelName);
+                    panel.webview.postMessage({ type: 'labelAdded', label: { name, color } });
+                    break;
+                }
+                case 'requestRenameLabel': {
+                    const current: string = msg.current;
+                    const newName = await vscode.window.showInputBox({ prompt: `Rename label '${current}' to:` });
+                    if (!newName || newName === current) { return; }
+                    const res = await renameLabelInProject(project, current, newName);
+                    if (res) {
+                        panel.webview.postMessage({ type: 'labelRenamed', oldName: current, newName });
+                    }
+                    break;
+                }
+                case 'requestDeleteLabel': {
+                    const name: string = msg.name;
+                    const confirm = await vscode.window.showWarningMessage(`Delete label '${name}' and its annotations?`, { modal: true }, 'Delete');
+                    if (confirm !== 'Delete') { return; }
+                    await deleteLabelFromProject(project, name);
+                    panel.webview.postMessage({ type: 'labelDeleted', name });
+                    break;
+                }
+                case 'saveAnnotation': {
+                    const annotations = msg.annotation;
+                    const root = getWorkspaceRoot();
+                    if (!root) { return; }
+                    const annDir = vscode.Uri.joinPath(root, '/.annovis/annotations', project);
+                    await vscode.workspace.fs.createDirectory(annDir);
+                    const annFile = vscode.Uri.joinPath(annDir, path.basename(target.fsPath) + '.json');
+                    await vscode.workspace.fs.writeFile(annFile, Buffer.from(JSON.stringify(annotations, null, 2)));
+                    vscode.window.showInformationMessage('Annotations saved');
+                    break;
+                }
+            }
+        });
     });
     context.subscriptions.push(annotateCmd);
 }
