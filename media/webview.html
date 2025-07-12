@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="${csp}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Annotate</title>
+    <style>
+        html,body{margin:0;padding:0;height:100%;display:flex;flex-direction:column;}
+        #toolbar{background:#222;color:#fff;padding:4px 8px;font-family:sans-serif;display:flex;align-items:center;gap:8px;user-select:none;}
+        #toolbar button{padding:2px 6px;border:none;border-radius:2px;background:#444;color:#fff;cursor:pointer;}
+        #toolbar button:disabled{opacity:0.4;cursor:not-allowed;}
+        #labelSelect{padding:2px 4px;}
+        #canvasWrap{flex:1;position:relative;overflow:auto;display:flex;justify-content:center;align-items:center;background:#111;}
+        canvas{border:1px solid #888;}
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <button id="modeBtn" data-mode="draw">Mode: Draw</button>
+        <label>Label:
+            <select id="labelSelect"></select>
+        </label>
+        <button id="addClassBtn">Add Class</button>
+        <button id="deleteBtn" disabled>Delete</button>
+        <button id="renameBtn">Rename Class</button>
+        <button id="delClassBtn">Delete Class</button>
+        <button id="saveBtn">Save</button>
+    </div>
+    <div style="flex:1;display:flex;overflow:hidden;">
+        <div id="sidebar" style="width:160px;background:#1b1b1b;color:#fff;font-family:sans-serif;padding:4px;overflow-y:auto;"></div>
+        <div id="canvasWrap" style="flex:1;display:flex;justify-content:center;align-items:center;"><canvas id="c"></canvas></div>
+    </div>
+
+    <script nonce="${nonce}" src="${fabricCdn}"></script>
+    <script nonce="${nonce}" src="${webviewScript}"></script>
+</body>
+</html>
