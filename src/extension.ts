@@ -16,7 +16,8 @@ function getWebviewContent(
     extensionUri: vscode.Uri,
     imageUrl: string,
     nonce: string,
-    labels: { name: string; color: string }[]
+    labels: { name: string; color: string }[],
+    annotations?: any[]
 ): string {
     const fabricCdn = 'https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js';
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'webview.js'));
@@ -39,6 +40,7 @@ function getWebviewContent(
         `<script nonce="${nonce}">
             window.imageUrl = "${imageUrl}";
             window.labels = ${JSON.stringify(labels)};
+            window.initialAnnotations = ${JSON.stringify(annotations || null)};
         </script></head>`
     );
 
@@ -163,11 +165,23 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         const labels = await readProjectLabels(project);
+        // Attempt to load existing annotations
+        let existingAnnotations: any[] | undefined = undefined;
+        try {
+            const root = getWorkspaceRoot();
+            if (root) {
+                const annPath = vscode.Uri.joinPath(root, '/.annovis/annotations', project, path.basename(target.fsPath) + '.json');
+                const bytes = await vscode.workspace.fs.readFile(annPath);
+                existingAnnotations = JSON.parse(Buffer.from(bytes).toString());
+            }
+        } catch {/* file may not exist – that is fine */}
+
         const panel = vscode.window.createWebviewPanel(
             'annovisAnnotation',
             `Annotate ${path.basename(target.fsPath)}`,
             vscode.ViewColumn.One, {
                 enableScripts: true,
+                retainContextWhenHidden: true,
                 localResourceRoots: [
                     vscode.Uri.file(path.dirname(target.fsPath)),
                     vscode.Uri.joinPath(context.extensionUri, 'media')
@@ -182,7 +196,8 @@ export function activate(context: vscode.ExtensionContext) {
             context.extensionUri,
             imageUri.toString(),
             nonce,
-            labels
+            labels,
+            existingAnnotations
         );
 
         // Message handler for webview interactions
@@ -228,6 +243,36 @@ export function activate(context: vscode.ExtensionContext) {
         });
     });
     context.subscriptions.push(annotateCmd);
+
+    // Visualize existing annotation file
+    const vizCmd = vscode.commands.registerCommand('annovis.visualizeAnnotation', async (resource: vscode.Uri) => {
+        if (!resource) { return; }
+
+        const root = getWorkspaceRoot();
+        if (!root) { return; }
+
+        // Determine project from path .annovis/annotations/<project>/file.json
+        const parts = resource.fsPath.split(path.sep);
+        const projIdx = parts.indexOf('.annovis');
+        let project:string|undefined;
+        if(projIdx>=0 && parts.length>projIdx+2 && parts[projIdx+1]==='annotations'){
+            project = parts[projIdx+2];
+        }
+        if(!project){ vscode.window.showErrorMessage('Cannot deduce project from annotation path'); return; }
+
+        // Determine image base name
+        const baseNameWithExt = path.basename(resource.fsPath, '.json'); // e.g. 001.jpg
+        // Search for image in workspace
+        const files = await vscode.workspace.findFiles(`**/${baseNameWithExt}` , '**/node_modules/**', 5);
+        if (files.length === 0) {
+            vscode.window.showErrorMessage('Original image not found in workspace');
+            return;
+        }
+        const imageUri = files[0];
+        // Open standard annotate window
+        await vscode.commands.executeCommand('annovis.annotateImage', imageUri);
+    });
+    context.subscriptions.push(vizCmd);
 }
 
 export function deactivate() {}

@@ -1,16 +1,101 @@
-html,body{margin:0;padding:0;height:100%;display:flex;flex-direction:column;}
-#toolbar{background:#222;color:#fff;padding:4px 8px;font-family:sans-serif;display:flex;align-items:center;gap:8px;user-select:none;}
-#toolbar button{padding:2px 6px;border:none;border-radius:2px;background:#444;color:#fff;cursor:pointer;}
-#toolbar button:disabled{opacity:0.4;cursor:not-allowed;}
-/* ensure vertical stack */
-.mode-column{display:flex;flex-direction:column!important;gap:2px;margin-right:8px;}
-/* base style for mode buttons */
-#toolbar .mode-column button{background:#fff;color:#000;border:1px solid #444;display:block;width:72px;text-align:center;}
-#toolbar .mode-column button.active{background:#4caf50!important;color:#000!important;}
-#labelSelect{padding:2px 4px;}
-#canvasWrap{flex:1;position:relative;overflow:auto;display:flex;justify-content:center;align-items:center;background:#111;}
-canvas{border:1px solid #888;}
+/* -------------------------------------------------
+   Global layout
+--------------------------------------------------*/
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
 
-/* ------- Sidebar label counts ----------*/
-.sidebar-item{display:flex;align-items:center;gap:4px;margin:2px 0;}
-.color-dot{width:12px;height:12px;display:inline-block;border-radius:50%;} 
+/* -------------------------------------------------
+   Toolbar
+--------------------------------------------------*/
+#toolbar {
+  background: #222;
+  color: #fff;
+  padding: 4px 8px;
+  font-family: sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+/* Toolbar buttons --------------------------------------------------*/
+#toolbar button {
+  padding: 2px 6px;
+  border: none;
+  border-radius: 2px;
+  background: #444;
+  color: #fff;
+  cursor: pointer;
+}
+
+#toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Mode button column (vertical) -----------------------------------*/
+.mode-column {
+  display: flex !important;
+  flex-direction: column;
+  gap: 2px;
+  margin-right: 8px;
+}
+
+/* Individual mode buttons -----------------------------------------*/
+#toolbar .mode-column button {
+  background: #fff;
+  color: #000;
+  border: 1px solid #444;
+  display: block;          /* force full-width block for vertical stack */
+  width: 72px;
+  text-align: center;
+}
+
+/* Highlight current mode ------------------------------------------*/
+#toolbar .mode-column button.active {
+  background: #4caf50 !important; /* green */
+  color: #000 !important;
+}
+
+/* Label dropdown ---------------------------------------------------*/
+#labelSelect {
+  padding: 2px 4px;
+}
+
+/* Canvas wrapper ---------------------------------------------------*/
+#canvasWrap {
+  flex: 1;
+  position: relative;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #111;
+}
+
+canvas {
+  border: 1px solid #888;
+}
+
+/* -------------------------------------------------
+   Sidebar label counts
+--------------------------------------------------*/
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0;
+}
+
+.color-dot {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  border-radius: 50%;
+} 

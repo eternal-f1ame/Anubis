@@ -1,8 +1,13 @@
 {
   "name": "annovis",
+  "author": "eternal-f1ame",
   "displayName": "AnnoVis",
   "description": "all purpose image annotation tool",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eternal-f1ame/Anubis.git"
+  },
   "engines": {
     "vscode": "^1.102.0"
   },
@@ -23,6 +28,10 @@
       {
         "command": "annovis.setProject",
         "title": "AnnoVis: Set Project"
+      },
+      {
+        "command": "annovis.visualizeAnnotation",
+        "title": "Visualize Annotation with AnnoVis"
       }
     ],
     "menus": {
@@ -35,6 +44,11 @@
         {
           "command": "annovis.setProject",
           "group": "navigation@5"
+        },
+        {
+          "command": "annovis.visualizeAnnotation",
+          "when": "resourceExtname == .json",
+          "group": "navigation@7"
         }
       ],
       "editor/title": [
