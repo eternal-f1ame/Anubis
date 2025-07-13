@@ -51,11 +51,32 @@ async function selectProject(context: vscode.ExtensionContext): Promise<ProjectI
 	
 	// Get project types for existing projects
 	const existingProjects: ProjectInfo[] = [];
+	const legacyProjects: string[] = [];
+	
 	for (const name of projectNames) {
 		const type = await getProjectType(name);
 		if (type) {
 			existingProjects.push({ name, type });
+		} else {
+			legacyProjects.push(name);
 		}
+	}
+	
+	// Handle legacy projects by asking user to specify their type
+	for (const legacyName of legacyProjects) {
+		const choice = await vscode.window.showWarningMessage(
+			`Project "${legacyName}" needs to be configured. What type of project is it?`,
+			'Object Detection',
+			'Image Classification',
+			'Skip'
+		);
+		
+		if (choice === 'Object Detection') {
+			existingProjects.push({ name: legacyName, type: 'object-detection' });
+		} else if (choice === 'Image Classification') {
+			existingProjects.push({ name: legacyName, type: 'image-classification' });
+		}
+		// If they choose 'Skip', the project won't be included in the list
 	}
 	
 	const projectOptions = [
@@ -102,9 +123,24 @@ async function ensureProjectSetup(projectInfo: ProjectInfo) {
 	const projDir = vscode.Uri.joinPath(root, '/.annovis/projects', projectInfo.name);
 	await vscode.workspace.fs.createDirectory(projDir);
 	const projFile = vscode.Uri.joinPath(projDir, 'project.json');
+	
 	try {
+		// Check if project file exists
 		await vscode.workspace.fs.stat(projFile);
+		
+		// File exists, check if it has the type field and update if necessary
+		const bytes = await vscode.workspace.fs.readFile(projFile);
+		const existingData = JSON.parse(Buffer.from(bytes).toString());
+		
+		// If the existing project doesn't have a type field, or the type doesn't match, update it
+		if (!existingData.type || existingData.type !== projectInfo.type) {
+			existingData.type = projectInfo.type;
+			existingData.name = projectInfo.name; // Ensure name is also correct
+			// Preserve existing labels and other data
+			await vscode.workspace.fs.writeFile(projFile, Buffer.from(JSON.stringify(existingData, null, 2)));
+		}
 	} catch {
+		// File doesn't exist, create it
 		const initial = {
 			name: projectInfo.name,
 			type: projectInfo.type,
@@ -123,7 +159,7 @@ async function getProjectType(projectName: string): Promise<AnnotationType | und
 	try {
 		const bytes = await vscode.workspace.fs.readFile(projFile);
 		const projectData = JSON.parse(Buffer.from(bytes).toString());
-		return projectData.type || 'object-detection'; // Default to object detection for legacy projects
+		return projectData.type; // Return the actual type or undefined if not found
 	} catch {
 		return undefined;
 	}
@@ -160,9 +196,41 @@ export function activate(context: vscode.ExtensionContext) {
 		return projectInfo;
 	}
 
-	// Main annotate command with project selection first
+	// Main annotate command with smart project selection
 	const annotateCmd = vscode.commands.registerCommand('annovis.annotateImage', async (resource?: vscode.Uri) => {
-		// Always show project selection for annotation
+		// First try to use current project, fall back to selection if needed
+		let projectInfo = await getCurrentProject();
+		
+		// If we don't have a valid current project, show project selection
+		if (!projectInfo) {
+			projectInfo = await selectProject(context);
+			if (!projectInfo) return;
+		}
+		
+		let target: vscode.Uri | undefined = resource;
+		if (!target && vscode.window.activeTextEditor) {
+			target = vscode.window.activeTextEditor.document.uri;
+		}
+		if (!target) {
+			vscode.window.showErrorMessage('No image selected for annotation');
+			return;
+		}
+
+		// Route to appropriate handler based on project type
+		switch (projectInfo.type) {
+			case 'object-detection':
+				await handleObjectDetection(context, target, projectInfo.name);
+				break;
+			case 'image-classification':
+				await handleImageClassification(context, target, projectInfo.name);
+				break;
+		}
+	});
+	context.subscriptions.push(annotateCmd);
+
+	// Annotate command with forced project selection
+	const annotateWithSelectionCmd = vscode.commands.registerCommand('annovis.annotateImageWithProjectSelection', async (resource?: vscode.Uri) => {
+		// Always show project selection for this command
 		const projectInfo = await selectProject(context);
 		if (!projectInfo) return;
 		
@@ -185,7 +253,7 @@ export function activate(context: vscode.ExtensionContext) {
 				break;
 		}
 	});
-	context.subscriptions.push(annotateCmd);
+	context.subscriptions.push(annotateWithSelectionCmd);
 
 	// Visualize existing annotation file
 	const vizCmd = vscode.commands.registerCommand('annovis.visualizeAnnotation', async (resource: vscode.Uri) => {
@@ -237,10 +305,6 @@ export function activate(context: vscode.ExtensionContext) {
 				return;
 			}
 
-			// Set current project
-			const projectInfo: ProjectInfo = { name: projectName, type: projectType };
-			context.globalState.update(PROJECT_KEY, projectInfo);
-
 			// Search for image in workspace
 			const files = await vscode.workspace.findFiles(`**/${imageName}`, '**/node_modules/**', 5);
 			if (files.length === 0) {
@@ -250,6 +314,7 @@ export function activate(context: vscode.ExtensionContext) {
 			const imageUri = files[0];
 			
 			// Open appropriate annotation window based on project type
+			// NOTE: This opens the file in its original project context without changing the user's current active project
 			switch (projectType) {
 				case 'object-detection':
 					await handleObjectDetection(context, imageUri, projectName);

@@ -36,8 +36,11 @@ AnnoVis is a lightweight image-annotation extension for VS Code / Cursor. It sup
 
 ### Annotating Images
 
-1. Right-click an image file and choose **Annotate Image with AnnoVis**.
-2. **Select a project** from the list (or create a new one) - this step always appears to ensure you're working with the correct project.
+1. **Quick Annotation**: Right-click an image file and choose **Annotate Image with AnnoVis**.
+   - This uses your current active project if you have one
+   - Only shows project selection if you don't have an active project
+2. **Select Different Project**: Right-click an image file and choose **Annotate Image with AnnoVis (Select Project)**.
+   - Always shows project selection to let you switch projects
 3. The annotation interface will open based on your project type:
    - **Object Detection**: Canvas with drawing tools for bounding boxes
    - **Image Classification**: Label selection interface with confidence scoring
@@ -46,7 +49,10 @@ AnnoVis is a lightweight image-annotation extension for VS Code / Cursor. It sup
 
 * Projects are automatically saved and remembered.
 * Each project has its own set of labels and settings.
-* Switch between projects using the **AnnoVis: Set Project** command.
+* **Switch between projects** using:
+  - **AnnoVis: Set Project** command from Command Palette
+  - **Annotate Image with AnnoVis (Select Project)** when annotating
+* **Legacy Project Handling**: If you have old projects without type information, the extension will ask you to specify whether they are Object Detection or Image Classification projects.
 * **Visualizing existing files**: Right-click any annotation/classification JSON file and select "Visualize Annotation with AnnoVis" - the correct project and interface will open automatically based on the file's metadata.
 
 ## Data Storage
@@ -135,3 +141,6 @@ No external dependencies — works anywhere VS Code or Cursor runs (Windows, mac
 • Added annotation type selection for Image Classification.
 • Implemented full Image Classification functionality with confidence scoring.
 • Improved workflow: project type selection during creation, direct annotation based on project type.
+• **Fixed critical bug**: Project type corruption that was causing Image Classification projects to become Object Detection projects.
+• **Enhanced project management**: Project files now always contain type information, with automatic handling of legacy projects.
+• **Improved workflow**: Smart project selection that uses current project when available, with explicit option to switch projects.

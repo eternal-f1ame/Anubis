@@ -22,6 +22,10 @@
         "title": "Annotate Image with AnnoVis"
       },
       {
+        "command": "annovis.annotateImageWithProjectSelection",
+        "title": "Annotate Image with AnnoVis (Select Project)"
+      },
+      {
         "command": "annovis.helloWorld",
         "title": "Hello World"
       },
@@ -38,6 +42,11 @@
       "explorer/context": [
         {
           "command": "annovis.annotateImage",
+          "when": "resourceExtname =~ /\\.(png|jpg|jpeg|gif|bmp|tiff)$/i",
+          "group": "navigation@6"
+        },
+        {
+          "command": "annovis.annotateImageWithProjectSelection",
           "when": "resourceExtname =~ /\\.(png|jpg|jpeg|gif|bmp|tiff)$/i",
           "group": "navigation@6"
         },

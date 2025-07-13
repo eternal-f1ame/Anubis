@@ -138,7 +138,7 @@ export async function handleObjectDetection(
 
 	const panel = vscode.window.createWebviewPanel(
 		'annovisObjectDetection',
-		`Object Detection - ${path.basename(target.fsPath)}`,
+		`Object Detection - ${path.basename(target.fsPath)} (${project})`,
 		vscode.ViewColumn.One, {
 			enableScripts: true,
 			retainContextWhenHidden: true,

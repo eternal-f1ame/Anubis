@@ -78,7 +78,7 @@ export async function handleImageClassification(
 
 	const panel = vscode.window.createWebviewPanel(
 		'annovisImageClassification',
-		`Image Classification - ${path.basename(target.fsPath)}`,
+		`Image Classification - ${path.basename(target.fsPath)} (${project})`,
 		vscode.ViewColumn.One, {
 			enableScripts: true,
 			retainContextWhenHidden: true,
