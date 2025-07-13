@@ -1,0 +1,230 @@
+/* -------------------------------------------------
+   Global layout
+--------------------------------------------------*/
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* -------------------------------------------------
+   Toolbar
+--------------------------------------------------*/
+#toolbar {
+  background: #222;
+  color: #fff;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  border-bottom: 1px solid #444;
+}
+
+.classification-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Toolbar buttons --------------------------------------------------*/
+#toolbar button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  background: #0078d4;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.2s;
+}
+
+#toolbar button:hover {
+  background: #106ebe;
+}
+
+#toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #666;
+}
+
+/* -------------------------------------------------
+   Main content area
+--------------------------------------------------*/
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* -------------------------------------------------
+   Sidebar
+--------------------------------------------------*/
+#sidebar {
+  width: 280px;
+  background: #1e1e1e;
+  color: #fff;
+  padding: 12px;
+  overflow-y: auto;
+  border-right: 1px solid #444;
+  box-sizing: border-box;
+}
+
+#sidebar h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #444;
+}
+
+#sidebar h3:not(:first-child) {
+  margin-top: 16px;
+}
+
+/* -------------------------------------------------
+   Labels List
+--------------------------------------------------*/
+#labelsList {
+  margin-bottom: 16px;
+}
+
+.label-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin: 2px 0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.label-item:hover {
+  background: #2d2d2d;
+}
+
+.label-item.selected {
+  background: #0078d4;
+}
+
+.color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.label-name {
+  flex: 1;
+  font-size: 13px;
+}
+
+/* -------------------------------------------------
+   Selected Labels
+--------------------------------------------------*/
+#selectedLabels {
+  margin-bottom: 16px;
+}
+
+.selected-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  margin: 2px 0;
+  background: #2d2d2d;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.selected-label .confidence-input {
+  width: 50px;
+  background: #3d3d3d;
+  border: 1px solid #555;
+  color: #fff;
+  border-radius: 2px;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+.remove-label {
+  background: #d13438;
+  color: #fff;
+  border: none;
+  border-radius: 2px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.remove-label:hover {
+  background: #c62828;
+}
+
+/* -------------------------------------------------
+   Classification Results
+--------------------------------------------------*/
+#classificationResults {
+  font-size: 12px;
+}
+
+.result-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  margin: 2px 0;
+}
+
+.result-confidence {
+  font-weight: 600;
+  color: #4caf50;
+}
+
+/* -------------------------------------------------
+   Image Container
+--------------------------------------------------*/
+#imageContainer {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #111;
+  padding: 16px;
+  overflow: auto;
+}
+
+#classificationImage {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border: 1px solid #444;
+  border-radius: 4px;
+}
+
+/* -------------------------------------------------
+   Responsive adjustments
+--------------------------------------------------*/
+@media (max-width: 768px) {
+  .main-content {
+    flex-direction: column;
+  }
+  
+  #sidebar {
+    width: 100%;
+    height: 200px;
+    border-right: none;
+    border-bottom: 1px solid #444;
+  }
+  
+  #imageContainer {
+    flex: 1;
+  }
+} 

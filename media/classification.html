@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="${csp}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Classification</title>
+    <link rel="stylesheet" href="${webviewStylesheet}">
+</head>
+<body>
+    <div id="toolbar">
+        <div class="classification-controls">
+            <button id="clearBtn">Clear Selection</button>
+            <button id="addClassBtn">Add Class</button>
+            <button id="renameBtn">Rename Class</button>
+            <button id="delClassBtn">Delete Class</button>
+            <button id="saveBtn">Save Classification</button>
+        </div>
+    </div>
+    
+    <div class="main-content">
+        <div id="sidebar">
+            <h3>Available Labels</h3>
+            <div id="labelsList"></div>
+            
+            <h3>Selected Labels</h3>
+            <div id="selectedLabels"></div>
+            
+            <h3>Classification Results</h3>
+            <div id="classificationResults"></div>
+        </div>
+        
+        <div id="imageContainer">
+            <img id="classificationImage" src="" alt="Image to classify">
+        </div>
+    </div>
+
+    <script nonce="${nonce}" src="${webviewScript}"></script>
+</body>
+</html> 
