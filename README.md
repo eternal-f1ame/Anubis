@@ -5,29 +5,34 @@ AnnoVis is a lightweight image-annotation extension for VS Code / Cursor. It sup
 ## Features
 
 ### Object Detection
+
 * Draw, move and resize bounding boxes on images.
 * Assign custom labels with unique colors.
 * Maintain multiple annotation projects per workspace.
 
 ### Image Classification
+
 * Classify entire images with multiple labels.
 * Assign confidence scores to each classification.
 * Support for multi-label classification.
 * Real-time classification results display.
 
 ### Instance Detection
+
 * Draw precise polygon outlines around object instances.
 * Click-based polygon drawing with visual feedback.
 * Support for complex shapes and detailed boundaries.
 * Edit and refine polygon vertices.
 
 ### Keypoint Detection
+
 * Mark specific points and joints on objects.
 * Create skeleton connections between related keypoints.
 * Support for human pose estimation and object landmarks.
 * Visual feedback for keypoint placement and connections.
 
 ### General Features
+
 * Support for common image formats (PNG, JPG, GIF, BMP, TIFF).
 * Saves annotations as plain JSON for easy post-processing.
 * Multiple annotation projects per workspace.
@@ -41,35 +46,35 @@ AnnoVis is a lightweight image-annotation extension for VS Code / Cursor. It sup
 1. Use **AnnoVis: Set Project** command from the Command Palette or right-click menu.
 2. Select **+ New Project** to create a new project.
 3. Choose the project type:
-   - **Object Detection**: For drawing bounding boxes around objects
-   - **Image Classification**: For classifying entire images with labels
-   - **Instance Detection**: For drawing precise polygon outlines around object instances
-   - **Keypoint Detection**: For marking specific points and joints on objects
+   * **Object Detection**: For drawing bounding boxes around objects
+   * **Image Classification**: For classifying entire images with labels
+   * **Instance Detection**: For drawing precise polygon outlines around object instances
+   * **Keypoint Detection**: For marking specific points and joints on objects
 4. Enter a project name.
 5. The project is now ready for annotation.
 
 ### Annotating Images
 
 1. **Quick Annotation**: Right-click an image file and choose **Annotate Image with AnnoVis**.
-   - This uses your current active project if you have one
-   - Only shows project selection if you don't have an active project
+   * This uses your current active project if you have one
+   * Only shows project selection if you don't have an active project
 2. **Select Different Project**: Right-click an image file and choose **Annotate Image with AnnoVis (Select Project)**.
-   - Always shows project selection to let you switch projects
+   * Always shows project selection to let you switch projects
 3. The annotation interface will open based on your project type:
-   - **Object Detection**: Canvas with drawing tools for bounding boxes
-   - **Image Classification**: Label selection interface with confidence scoring
-   - **Instance Detection**: Canvas with polygon drawing tools for precise outlines
-   - **Keypoint Detection**: Canvas with keypoint placement tools and skeleton connections
+   * **Object Detection**: Canvas with drawing tools for bounding boxes
+   * **Image Classification**: Label selection interface with confidence scoring
+   * **Instance Detection**: Canvas with polygon drawing tools for precise outlines
+   * **Keypoint Detection**: Canvas with keypoint placement tools and skeleton connections
 
 ### Project Management
 
 * Projects are automatically saved and remembered.
 * Each project has its own set of labels and settings.
 * **Switch between projects** using:
-  - **AnnoVis: Set Project** command from Command Palette
-  - **Annotate Image with AnnoVis (Select Project)** when annotating
+  * **AnnoVis: Set Project** command from Command Palette
+  * **Annotate Image with AnnoVis (Select Project)** when annotating
 * **Legacy Project Handling**: If you have old projects without type information, the extension will ask you to specify whether they are Object Detection or Image Classification projects.
-* **Visualizing existing files**: Right-click any annotation/classification JSON file and select "Visualize Annotation with AnnoVis" - the correct project and interface will open automatically based on the file's metadata.
+* **Visualizing existing files**: Right-click any annotation/classification JSON file and select "Visualize Annotation with AnnoVis" -> the correct project and interface will open automatically based on the file's metadata.
 
 ## Data Storage
 
@@ -81,8 +86,10 @@ AnnoVis is a lightweight image-annotation extension for VS Code / Cursor. It sup
 
 ## Data Format
 
-### Object Detection
+### Object Detection:-
+
 Annotations are saved as JSON files with metadata and bounding box coordinates (normalized 0-1):
+
 ```json
 {
   "metadata": {
@@ -104,8 +111,10 @@ Annotations are saved as JSON files with metadata and bounding box coordinates (
 }
 ```
 
-### Image Classification
+### Image Classification:-
+
 Classifications are saved as JSON files with metadata and labels with confidence scores:
+
 ```json
 {
   "metadata": {
@@ -131,8 +140,10 @@ Classifications are saved as JSON files with metadata and labels with confidence
 }
 ```
 
-### Instance Detection
+### Instance Detection:-
+
 Instance annotations are saved as JSON files with metadata and polygon coordinates (normalized 0-1):
+
 ```json
 {
   "metadata": {
@@ -157,8 +168,10 @@ Instance annotations are saved as JSON files with metadata and polygon coordinat
 }
 ```
 
-### Keypoint Detection
+### Keypoint Detection:-
+
 Keypoint annotations are saved as JSON files with metadata, keypoint coordinates (normalized 0-1), and skeleton connections:
+
 ```json
 {
   "metadata": {
@@ -195,8 +208,10 @@ Keypoint annotations are saved as JSON files with metadata, keypoint coordinates
 }
 ```
 
-### Project Configuration
+### Project Configuration:-
+
 Project settings are stored in `project.json`:
+
 ```json
 {
   "name": "My Detection Project",
