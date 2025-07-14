@@ -25,6 +25,11 @@
     let mode = previousState?.mode || 'move';
     let drawing = false, rect, startX, startY;
     let panning = false, panStartX = 0, panStartY = 0, startVpt;
+    
+    // Undo/Redo system
+    let undoHistory = [];
+    let redoHistory = [];
+    const MAX_UNDO_STEPS = 5;
 
     labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
 
@@ -36,6 +41,110 @@
     const MAX_ZOOM = 10;
 
     const colorForLabel = name => labelMap[name] || '#ff0000';
+    
+    // Undo/Redo system functions
+    const saveToHistory = () => {
+        const state = {
+            canvasState: canvas.toJSON(['label']),
+            labelArray: JSON.parse(JSON.stringify(labelArray)),
+            labelMap: JSON.parse(JSON.stringify(labelMap)),
+            selectedLabel: labelSelect.value
+        };
+        
+        undoHistory.push(state);
+        if (undoHistory.length > MAX_UNDO_STEPS) {
+            undoHistory.shift(); // Remove oldest state
+        }
+        
+        // Clear redo history when new changes are made
+        redoHistory = [];
+    };
+    
+    const undo = () => {
+        if (undoHistory.length === 0) {
+            return;
+        }
+        
+        // Save current state to redo history before undoing
+        const currentState = {
+            canvasState: canvas.toJSON(['label']),
+            labelArray: JSON.parse(JSON.stringify(labelArray)),
+            labelMap: JSON.parse(JSON.stringify(labelMap)),
+            selectedLabel: labelSelect.value
+        };
+        
+        redoHistory.push(currentState);
+        if (redoHistory.length > MAX_UNDO_STEPS) {
+            redoHistory.shift(); // Remove oldest redo state
+        }
+        
+        const previousState = undoHistory.pop();
+        
+        // Restore canvas
+        canvas.loadFromJSON(previousState.canvasState, () => {
+            canvas.renderAll();
+            
+            // Restore labels
+            labelArray = previousState.labelArray;
+            labelMap = previousState.labelMap;
+            
+            // Rebuild label select
+            labelSelect.innerHTML = labelArray.map(l => 
+                `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`
+            ).join('');
+            
+            // Restore selected label
+            if (previousState.selectedLabel && labelSelect.querySelector(`option[value="${previousState.selectedLabel}"]`)) {
+                labelSelect.value = previousState.selectedLabel;
+            }
+            
+            updateCounts();
+            saveState();
+        });
+    };
+    
+    const redo = () => {
+        if (redoHistory.length === 0) {
+            return;
+        }
+        
+        // Save current state to undo history before redoing
+        const currentState = {
+            canvasState: canvas.toJSON(['label']),
+            labelArray: JSON.parse(JSON.stringify(labelArray)),
+            labelMap: JSON.parse(JSON.stringify(labelMap)),
+            selectedLabel: labelSelect.value
+        };
+        
+        undoHistory.push(currentState);
+        if (undoHistory.length > MAX_UNDO_STEPS) {
+            undoHistory.shift(); // Remove oldest undo state
+        }
+        
+        const nextState = redoHistory.pop();
+        
+        // Restore canvas
+        canvas.loadFromJSON(nextState.canvasState, () => {
+            canvas.renderAll();
+            
+            // Restore labels
+            labelArray = nextState.labelArray;
+            labelMap = nextState.labelMap;
+            
+            // Rebuild label select
+            labelSelect.innerHTML = labelArray.map(l => 
+                `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`
+            ).join('');
+            
+            // Restore selected label
+            if (nextState.selectedLabel && labelSelect.querySelector(`option[value="${nextState.selectedLabel}"]`)) {
+                labelSelect.value = nextState.selectedLabel;
+            }
+            
+            updateCounts();
+            saveState();
+        });
+    };
 
     const saveState = () => {
         const state = {
@@ -139,6 +248,9 @@
             });
             updateCounts();
             setMovementLock(mode !== 'select');
+            
+            // Save initial state for undo
+            saveToHistory();
         }
         // Restore state after canvas is fully loaded
         setTimeout(restoreState, 200);
@@ -245,6 +357,7 @@
         }
         updateCounts();
         saveAnnotations();
+        saveToHistory(); // Save to undo history after auto-save
         canvas.requestRenderAll();
     });
 
@@ -291,6 +404,7 @@
     canvas.on('object:modified', () => {
         updateCounts();
         saveAnnotations();
+        saveToHistory(); // Save to undo history after auto-save
     });
 
     canvas.on('selection:created', saveState);
@@ -326,6 +440,7 @@
         canvas.discardActiveObject();
         canvas.requestRenderAll();
         deleteBtn.disabled = true;
+        saveToHistory(); // Save to undo history after deletion
     });
 
     saveBtn.addEventListener('click', saveAnnotations);
@@ -343,7 +458,27 @@
     });
 
     window.addEventListener('keydown', e => {
-        if (e.key === 'Delete' && !deleteBtn.disabled) {deleteBtn.click();}
+        if (e.key === 'Delete') {
+            // Check if a class is selected in dropdown (focus on select element)
+            if (document.activeElement === labelSelect) {
+                delClassBtn.click();
+            } else if (!deleteBtn.disabled) {
+                // Delete selected objects
+                deleteBtn.click();
+            }
+        }
+        
+        // Ctrl+Z for undo
+        if (e.ctrlKey && e.key === 'z') {
+            e.preventDefault();
+            undo();
+        }
+        
+        // Ctrl+Y for redo
+        if (e.ctrlKey && e.key === 'y') {
+            e.preventDefault();
+            redo();
+        }
     });
 
     // Message handling
@@ -369,6 +504,7 @@
             labelSelect.value = label.name;
             labelMap[label.name] = label.color;
             labelArray.push(label);
+            saveToHistory(); // Save to undo history after label added
         } else if (msg.type === 'labelRenamed') {
             [...labelSelect.options].forEach(o => {
                 if (o.value === msg.oldName) {
@@ -388,6 +524,7 @@
                 if (l.name === msg.oldName){ l.name = msg.newName;}
             });
             updateCounts();
+            saveToHistory(); // Save to undo history after label renamed
         } else if (msg.type === 'labelDeleted') {
             [...labelSelect.options].forEach(o => {
                 if (o.value === msg.name) {o.remove();}
@@ -399,6 +536,7 @@
                 labelSelect.value = labelSelect.options[0].value;
             }
             updateCounts();
+            saveToHistory(); // Save to undo history after label deleted
         }
     });
 

@@ -35,6 +35,11 @@
     let tempLine = null;
     let previewLine = null;
     let pointMarkers = [];
+    
+    // Undo/Redo system
+    let undoHistory = [];
+    let redoHistory = [];
+    const MAX_UNDO_STEPS = 5;
 
     labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
 
@@ -46,6 +51,110 @@
     const MAX_ZOOM = 10;
 
     const colorForLabel = name => labelMap[name] || '#ff0000';
+    
+    // Undo/Redo system functions
+    const saveToHistory = () => {
+        const state = {
+            canvasState: canvas.toJSON(['label']),
+            labelArray: JSON.parse(JSON.stringify(labelArray)),
+            labelMap: JSON.parse(JSON.stringify(labelMap)),
+            selectedLabel: labelSelect.value
+        };
+        
+        undoHistory.push(state);
+        if (undoHistory.length > MAX_UNDO_STEPS) {
+            undoHistory.shift(); // Remove oldest state
+        }
+        
+        // Clear redo history when new changes are made
+        redoHistory = [];
+    };
+    
+    const undo = () => {
+        if (undoHistory.length === 0) {
+            return;
+        }
+        
+        // Save current state to redo history before undoing
+        const currentState = {
+            canvasState: canvas.toJSON(['label']),
+            labelArray: JSON.parse(JSON.stringify(labelArray)),
+            labelMap: JSON.parse(JSON.stringify(labelMap)),
+            selectedLabel: labelSelect.value
+        };
+        
+        redoHistory.push(currentState);
+        if (redoHistory.length > MAX_UNDO_STEPS) {
+            redoHistory.shift(); // Remove oldest redo state
+        }
+        
+        const previousState = undoHistory.pop();
+        
+        // Restore canvas
+        canvas.loadFromJSON(previousState.canvasState, () => {
+            canvas.renderAll();
+            
+            // Restore labels
+            labelArray = previousState.labelArray;
+            labelMap = previousState.labelMap;
+            
+            // Rebuild label select
+            labelSelect.innerHTML = labelArray.map(l => 
+                `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`
+            ).join('');
+            
+            // Restore selected label
+            if (previousState.selectedLabel && labelSelect.querySelector(`option[value="${previousState.selectedLabel}"]`)) {
+                labelSelect.value = previousState.selectedLabel;
+            }
+            
+            updateCounts();
+            saveState();
+        });
+    };
+    
+    const redo = () => {
+        if (redoHistory.length === 0) {
+            return;
+        }
+        
+        // Save current state to undo history before redoing
+        const currentState = {
+            canvasState: canvas.toJSON(['label']),
+            labelArray: JSON.parse(JSON.stringify(labelArray)),
+            labelMap: JSON.parse(JSON.stringify(labelMap)),
+            selectedLabel: labelSelect.value
+        };
+        
+        undoHistory.push(currentState);
+        if (undoHistory.length > MAX_UNDO_STEPS) {
+            undoHistory.shift(); // Remove oldest undo state
+        }
+        
+        const nextState = redoHistory.pop();
+        
+        // Restore canvas
+        canvas.loadFromJSON(nextState.canvasState, () => {
+            canvas.renderAll();
+            
+            // Restore labels
+            labelArray = nextState.labelArray;
+            labelMap = nextState.labelMap;
+            
+            // Rebuild label select
+            labelSelect.innerHTML = labelArray.map(l => 
+                `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`
+            ).join('');
+            
+            // Restore selected label
+            if (nextState.selectedLabel && labelSelect.querySelector(`option[value="${nextState.selectedLabel}"]`)) {
+                labelSelect.value = nextState.selectedLabel;
+            }
+            
+            updateCounts();
+            saveState();
+        });
+    };
 
     const showFeedback = (message, type = 'info') => {
         const existing = document.querySelector('.feedback-message');
@@ -279,6 +388,7 @@
             cleanupPolygonDrawing();
             updateCounts();
             saveAnnotations(); // Auto-save when polygon is added
+            saveToHistory(); // Save to undo history after auto-save
             canvas.renderAll();
             showFeedback(`Polygon added with label: ${label}`);
         }
@@ -387,6 +497,29 @@
         if (e.key === 'Escape' && isDrawingPolygon) {
             cancelPolygonDrawing();
         }
+        
+        // Delete key for objects and classes
+        if (e.key === 'Delete') {
+            // Check if a class is selected in dropdown (focus on select element)
+            if (document.activeElement === labelSelect) {
+                delClassBtn.click();
+            } else {
+                // Delete selected objects
+                deleteBtn.click();
+            }
+        }
+        
+        // Ctrl+Z for undo
+        if (e.ctrlKey && e.key === 'z') {
+            e.preventDefault();
+            undo();
+        }
+        
+        // Ctrl+Y for redo
+        if (e.ctrlKey && e.key === 'y') {
+            e.preventDefault();
+            redo();
+        }
     });
 
     // Prevent right-click context menu
@@ -416,6 +549,7 @@
             canvas.discardActiveObject();
             updateCounts();
             saveAnnotations(); // Auto-save when objects are deleted
+            saveToHistory(); // Save to undo history after auto-save
             canvas.renderAll();
             showFeedback(`Deleted ${activeObjects.length} object(s)`);
         }
@@ -435,42 +569,30 @@
     // Label selection handler
     labelSelect.addEventListener('change', saveState);
 
-    // Load and display image
-    const img = new Image();
-    img.onload = () => {
+    // Load image and initial annotations (using object-detection's working approach)
+    fabric.Image.fromURL(imageUrl, img => {
+        canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+        canvas.setWidth(img.width);
+        canvas.setHeight(img.height);
         imgW = img.width;
         imgH = img.height;
-        
-        const maxCanvasW = window.innerWidth - 200;
-        const maxCanvasH = window.innerHeight - 100;
-        const scale = Math.min(maxCanvasW / imgW, maxCanvasH / imgH, 1);
-        const canvasW = imgW * scale;
-        const canvasH = imgH * scale;
-        
-        canvas.setWidth(canvasW);
-        canvas.setHeight(canvasH);
-        
-        const fabricImg = new fabric.Image(img, {
-            left: 0,
-            top: 0,
-            scaleX: scale,
-            scaleY: scale,
-            selectable: false,
-            evented: false
-        });
-        
-        canvas.add(fabricImg);
-        canvas.sendToBack(fabricImg);
-        
+
+        const scale = Math.min(wrap.clientWidth / img.width, wrap.clientHeight / img.height, 1);
+        canvas.setZoom(scale);
+        const vpt = canvas.viewportTransform;
+        vpt[4] = (wrap.clientWidth - img.width * scale) / 2;
+        vpt[5] = (wrap.clientHeight - img.height * scale) / 2;
+
         // Load existing annotations
         if (window.initialAnnotations) {
             window.initialAnnotations.forEach(ann => {
                 if (ann.type === 'polygon' && ann.points) {
-                    const scaledPoints = ann.points.map(p => ({
-                        x: p.x * imgW * scale,
-                        y: p.y * imgH * scale
+                    // Use direct image coordinates (no scaling needed)
+                    const points = ann.points.map(p => ({
+                        x: p.x * imgW,
+                        y: p.y * imgH
                     }));
-                    const polygon = createPolygonFromPoints(scaledPoints, ann.label);
+                    const polygon = createPolygonFromPoints(points, ann.label);
                     if (polygon) {
                         canvas.add(polygon);
                     }
@@ -478,11 +600,14 @@
             });
         }
         
+        // Restore state after canvas is fully loaded
+        setTimeout(restoreState, 200);
         updateCounts();
-        canvas.renderAll();
-    };
-    
-    img.src = imageUrl;
+        canvas.requestRenderAll();
+        
+        // Save initial state for undo
+        setTimeout(() => saveToHistory(), 300);
+    });
 
     // Message handler for VS Code communication
     window.addEventListener('message', (event) => {
@@ -500,6 +625,7 @@
                 labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
                 labelSelect.value = newLabel.name;
                 updateCounts();
+                saveToHistory(); // Save to undo history after label added
                 break;
             case 'labelRenamed':
                 const oldName = message.oldName;
@@ -519,6 +645,7 @@
                 
                 updateCounts();
                 canvas.renderAll();
+                saveToHistory(); // Save to undo history after label renamed
                 break;
             case 'labelDeleted':
                 const deletedName = message.name;
@@ -535,6 +662,7 @@
                 
                 updateCounts();
                 canvas.renderAll();
+                saveToHistory(); // Save to undo history after label deleted
                 break;
         }
     });

@@ -3,7 +3,7 @@ import * as path from 'path';
 import { selectAnnotationType, AnnotationType } from './annotationTypes';
 import { handleObjectDetection, COLOR_PALETTE, readProjectLabels } from './objectDetection';
 import { handleImageClassification } from './imageClassification';
-import { handleInstanceDetection } from './instanceDetection';
+import { handleInstanceSegmentation } from './instanceSegmentation';
 import { handleKeypointDetection } from './keypointDetection';
 
 const PROJECT_KEY = 'annovis.currentProject';
@@ -31,9 +31,9 @@ async function selectProjectType(): Promise<AnnotationType | undefined> {
 			id: 'image-classification' as const
 		},
 		{
-			label: 'Instance Detection',
+			label: 'Instance Segmentation',
 			description: 'Project for drawing precise outlines around object instances',
-			id: 'instance-detection' as const
+			id: 'instance-segmentation' as const
 		},
 		{
 			label: 'Keypoint Detection',
@@ -100,13 +100,13 @@ async function selectProject(context: vscode.ExtensionContext): Promise<ProjectI
 			for (const orphanedName of orphanedProjects) {
 				const typeChoice = await vscode.window.showWarningMessage(
 					`What type of project is "${orphanedName}"?`,
-					'Object Detection',
-					'Image Classification',
-					'Instance Detection',
+			'Object Detection',
+			'Image Classification',
+					'Instance Segmentation',
 					'Keypoint Detection',
 					'Delete this directory'
-				);
-				
+		);
+		
 				if (typeChoice === 'Object Detection') {
 					const projectInfo: ProjectInfo = { name: orphanedName, type: 'object-detection' };
 					await ensureProjectSetup(projectInfo);
@@ -115,8 +115,8 @@ async function selectProject(context: vscode.ExtensionContext): Promise<ProjectI
 					const projectInfo: ProjectInfo = { name: orphanedName, type: 'image-classification' };
 					await ensureProjectSetup(projectInfo);
 					existingProjects.push(projectInfo);
-				} else if (typeChoice === 'Instance Detection') {
-					const projectInfo: ProjectInfo = { name: orphanedName, type: 'instance-detection' };
+				} else if (typeChoice === 'Instance Segmentation') {
+					const projectInfo: ProjectInfo = { name: orphanedName, type: 'instance-segmentation' };
 					await ensureProjectSetup(projectInfo);
 					existingProjects.push(projectInfo);
 				} else if (typeChoice === 'Keypoint Detection') {
@@ -130,7 +130,7 @@ async function selectProject(context: vscode.ExtensionContext): Promise<ProjectI
 					} catch (error) {
 						vscode.window.showErrorMessage(`Failed to delete project directory: ${error}`);
 					}
-				}
+		}
 				// If they don't choose anything, the project won't be included in the list
 			}
 		}
@@ -143,7 +143,7 @@ async function selectProject(context: vscode.ExtensionContext): Promise<ProjectI
 			label: p.name, 
 			description: `${p.type === 'object-detection' ? 'Object Detection' : 
 						   p.type === 'image-classification' ? 'Image Classification' : 
-						   p.type === 'instance-detection' ? 'Instance Detection' :
+						   		p.type === 'instance-segmentation' ? 'Instance Segmentation' :
 						   'Keypoint Detection'} project`,
 			id: p.name,
 			projectInfo: p
@@ -165,7 +165,7 @@ async function selectProject(context: vscode.ExtensionContext): Promise<ProjectI
 		const projectName = await vscode.window.showInputBox({ 
 			prompt: `Enter name for ${projectType === 'object-detection' ? 'Object Detection' : 
 									  projectType === 'image-classification' ? 'Image Classification' : 
-									  projectType === 'instance-detection' ? 'Instance Detection' :
+									  		projectType === 'instance-segmentation' ? 'Instance Segmentation' :
 									  'Keypoint Detection'} project`,
 			validateInput: (value) => {
 				if (!value || value.trim().length === 0) {
@@ -187,8 +187,8 @@ async function selectProject(context: vscode.ExtensionContext): Promise<ProjectI
 		// Ensure project is created and configured properly
 		try {
 			await ensureProjectSetup(projectInfo);
-			context.globalState.update(PROJECT_KEY, projectInfo);
-			return projectInfo;
+		context.globalState.update(PROJECT_KEY, projectInfo);
+		return projectInfo;
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to create project: ${error}`);
 			return;
@@ -226,13 +226,13 @@ async function ensureProjectSetup(projectInfo: ProjectInfo) {
 		// File doesn't exist, create directory and file atomically
 		try {
 			await vscode.workspace.fs.createDirectory(projDir);
-			const initial = {
-				name: projectInfo.name,
-				type: projectInfo.type,
-				labels: [{ name: 'Object', color: COLOR_PALETTE[0] }],
-				created: new Date().toISOString()
-			};
-			await vscode.workspace.fs.writeFile(projFile, Buffer.from(JSON.stringify(initial, null, 2)));
+		const initial = {
+			name: projectInfo.name,
+			type: projectInfo.type,
+			labels: [{ name: 'Object', color: COLOR_PALETTE[0] }],
+			created: new Date().toISOString()
+		};
+		await vscode.workspace.fs.writeFile(projFile, Buffer.from(JSON.stringify(initial, null, 2)));
 		} catch (error) {
 			// If project creation fails, clean up the directory to avoid orphaned folders
 			try {
@@ -276,7 +276,7 @@ export function activate(context: vscode.ExtensionContext) {
 			await ensureProjectSetup(projectInfo);
 			vscode.window.showInformationMessage(`Current AnnoVis project: ${projectInfo.name} (${projectInfo.type === 'object-detection' ? 'Object Detection' : 
 																											  projectInfo.type === 'image-classification' ? 'Image Classification' : 
-																											  projectInfo.type === 'instance-detection' ? 'Instance Detection' :
+																											  		projectInfo.type === 'instance-segmentation' ? 'Instance Segmentation' :
 																											  'Keypoint Detection'})`);
 		}
 	});
@@ -321,8 +321,8 @@ export function activate(context: vscode.ExtensionContext) {
 			case 'image-classification':
 				await handleImageClassification(context, target, projectInfo.name);
 				break;
-			case 'instance-detection':
-				await handleInstanceDetection(context, target, projectInfo.name);
+			case 'instance-segmentation':
+				await handleInstanceSegmentation(context, target, projectInfo.name);
 				break;
 			case 'keypoint-detection':
 				await handleKeypointDetection(context, target, projectInfo.name);
@@ -354,8 +354,8 @@ export function activate(context: vscode.ExtensionContext) {
 			case 'image-classification':
 				await handleImageClassification(context, target, projectInfo.name);
 				break;
-			case 'instance-detection':
-				await handleInstanceDetection(context, target, projectInfo.name);
+			case 'instance-segmentation':
+				await handleInstanceSegmentation(context, target, projectInfo.name);
 				break;
 			case 'keypoint-detection':
 				await handleKeypointDetection(context, target, projectInfo.name);
@@ -399,7 +399,7 @@ export function activate(context: vscode.ExtensionContext) {
 						projectType = 'image-classification';
 					} else if (parts[projIdx + 1] === 'instances') {
 						projectName = parts[projIdx + 2];
-						projectType = 'instance-detection';
+						projectType = 'instance-segmentation';
 					} else if (parts[projIdx + 1] === 'keypoints') {
 						projectName = parts[projIdx + 2];
 						projectType = 'keypoint-detection';
@@ -437,8 +437,8 @@ export function activate(context: vscode.ExtensionContext) {
 				case 'image-classification':
 					await handleImageClassification(context, imageUri, projectName);
 					break;
-				case 'instance-detection':
-					await handleInstanceDetection(context, imageUri, projectName);
+				case 'instance-segmentation':
+					await handleInstanceSegmentation(context, imageUri, projectName);
 					break;
 				case 'keypoint-detection':
 					await handleKeypointDetection(context, imageUri, projectName);

@@ -50,7 +50,7 @@
         labelArray.forEach(label => {
             const choiceItem = document.createElement('div');
             choiceItem.className = 'choice-item';
-            
+    
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.id = `choice-${label.name}`;
@@ -176,14 +176,14 @@
                 const labelIndex = labelArray.findIndex(l => l.name === oldName);
                 if (labelIndex !== -1) {
                     labelArray[labelIndex].name = newName;
-                    labelMap[newName] = labelMap[oldName];
-                    delete labelMap[oldName];
+                labelMap[newName] = labelMap[oldName];
+                delete labelMap[oldName];
                     // Update selected labels if necessary
                     if (selectedLabels.has(oldName)) {
                         selectedLabels.delete(oldName);
                         selectedLabels.add(newName);
-                    }
-                    updateUI();
+                }
+                updateUI();
                 }
                 break;
             case 'labelDeleted':

@@ -53,7 +53,7 @@ function getWorkspaceRoot(): vscode.Uri | undefined {
 	return ws && ws.length ? ws[0].uri : undefined;
 }
 
-export async function handleInstanceDetection(
+export async function handleInstanceSegmentation(
 	context: vscode.ExtensionContext,
 	target: vscode.Uri,
 	project: string
@@ -79,8 +79,8 @@ export async function handleInstanceDetection(
 	} catch {/* file may not exist – that is fine */}
 
 	const panel = vscode.window.createWebviewPanel(
-		'annovisInstanceDetection',
-		`Instance Detection - ${path.basename(target.fsPath)} (${project})`,
+		'annovisInstanceSegmentation',
+		`Instance Segmentation - ${path.basename(target.fsPath)} (${project})`,
 		vscode.ViewColumn.One, {
 			enableScripts: true,
 			retainContextWhenHidden: true,
@@ -142,7 +142,7 @@ export async function handleInstanceDetection(
 				const annotationData = {
 					metadata: {
 						projectName: project,
-						projectType: 'instance-detection' as const,
+						projectType: 'instance-segmentation' as const,
 						imageName: path.basename(target.fsPath),
 						created: new Date().toISOString(),
 						version: '1.0'

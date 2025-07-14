@@ -17,7 +17,7 @@ AnnoVis is a lightweight image-annotation extension for VS Code / Cursor. It sup
 * Support for multi-label classification.
 * Real-time classification results display.
 
-### Instance Detection
+### Instance Segmentation
 
 * Draw precise polygon outlines around object instances.
 * Click-based polygon drawing with visual feedback.
@@ -48,7 +48,7 @@ AnnoVis is a lightweight image-annotation extension for VS Code / Cursor. It sup
 3. Choose the project type:
    * **Object Detection**: For drawing bounding boxes around objects
    * **Image Classification**: For classifying entire images with labels
-   * **Instance Detection**: For drawing precise polygon outlines around object instances
+   * **Instance Segmentation**: For drawing precise polygon outlines around object instances
    * **Keypoint Detection**: For marking specific points and joints on objects
 4. Enter a project name.
 5. The project is now ready for annotation.
@@ -63,7 +63,7 @@ AnnoVis is a lightweight image-annotation extension for VS Code / Cursor. It sup
 3. The annotation interface will open based on your project type:
    * **Object Detection**: Canvas with drawing tools for bounding boxes
    * **Image Classification**: Label selection interface with confidence scoring
-   * **Instance Detection**: Canvas with polygon drawing tools for precise outlines
+   * **Instance Segmentation**: Canvas with polygon drawing tools for precise outlines
    * **Keypoint Detection**: Canvas with keypoint placement tools and skeleton connections
 
 ### Project Management
@@ -80,7 +80,7 @@ AnnoVis is a lightweight image-annotation extension for VS Code / Cursor. It sup
 
 * **Object Detection**: Annotations stored in `/.annovis/annotations/[project-name]/`
 * **Image Classification**: Classifications stored in `/.annovis/classifications/[project-name]/`
-* **Instance Detection**: Instance annotations stored in `/.annovis/instances/[project-name]/`
+* **Instance Segmentation**: Instance annotations stored in `/.annovis/instances/[project-name]/`
 * **Keypoint Detection**: Keypoint annotations stored in `/.annovis/keypoints/[project-name]/`
 * **Project Settings**: Project configuration in `/.annovis/projects/[project-name]/project.json`
 
@@ -140,7 +140,7 @@ Classifications are saved as JSON files with metadata and labels with confidence
 }
 ```
 
-### Instance Detection:-
+### Instance Segmentation:-
 
 Instance annotations are saved as JSON files with metadata and polygon coordinates (normalized 0-1):
 
@@ -148,7 +148,7 @@ Instance annotations are saved as JSON files with metadata and polygon coordinat
 {
   "metadata": {
     "projectName": "My Instance Project",
-    "projectType": "instance-detection",
+    "projectType": "instance-segmentation",
     "imageName": "image.jpg",
     "created": "2024-01-01T12:00:00.000Z",
     "version": "1.0"
@@ -226,7 +226,7 @@ Project settings are stored in `project.json`:
 }
 ```
 
-Note: The `type` field can be `"object-detection"`, `"image-classification"`, `"instance-detection"`, or `"keypoint-detection"`.
+Note: The `type` field can be `"object-detection"`, `"image-classification"`, `"instance-segmentation"`, or `"keypoint-detection"`.
 
 ## Requirements
 
@@ -243,5 +243,5 @@ No external dependencies — works anywhere VS Code or Cursor runs (Windows, mac
 • **Fixed critical bug**: Project type corruption that was causing Image Classification projects to become Object Detection projects.
 • **Enhanced project management**: Project files now always contain type information, with automatic handling of legacy projects.
 • **Improved workflow**: Smart project selection that uses current project when available, with explicit option to switch projects.
-• **New Feature**: Instance Detection support with polygon-based annotation for precise object outlines.
+• **New Feature**: Instance Segmentation support with polygon-based annotation for precise object outlines.
 • **New Feature**: Keypoint Detection support with point-based annotation and skeleton connections for pose estimation.
