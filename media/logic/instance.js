@@ -1,0 +1,545 @@
+(() => {
+    const vscode = acquireVsCodeApi();
+    
+    // Get previous state from VS Code
+    const previousState = vscode.getState();
+    
+    const canvasEl = document.getElementById('c');
+    const wrap = document.getElementById('canvasWrap');
+    const labelSelect = document.getElementById('labelSelect');
+    const sidebar = document.getElementById('sidebar');
+    const polygonBtn = document.getElementById('polygonModeBtn');
+    const selectBtn = document.getElementById('selectModeBtn');
+    const moveBtn = document.getElementById('moveModeBtn');
+    const editBtn = document.getElementById('editModeBtn');
+    const modeButtons = { polygon: polygonBtn, select: selectBtn, move: moveBtn, edit: editBtn };
+    const deleteBtn = document.getElementById('deleteBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const addClassBtn = document.getElementById('addClassBtn');
+    const renameBtn = document.getElementById('renameBtn');
+    const delClassBtn = document.getElementById('delClassBtn');
+    const finishPolygonBtn = document.getElementById('finishPolygonBtn');
+    const cancelPolygonBtn = document.getElementById('cancelPolygonBtn');
+
+    const imageUrl = window.imageUrl;
+    let labelArray = window.labels;
+    let labelMap = Object.fromEntries(labelArray.map(l => [l.name, l.color]));
+    let imgW = 0, imgH = 0;
+    let mode = previousState?.mode || 'move';
+    let panning = false, panStartX = 0, panStartY = 0, startVpt;
+    
+    // Polygon drawing state
+    let currentPolygon = null;
+    let polygonPoints = [];
+    let isDrawingPolygon = false;
+    let tempLine = null;
+    let previewLine = null;
+    let pointMarkers = [];
+
+    labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
+
+    const canvas = new fabric.Canvas(canvasEl, { selection: true });
+    canvas.hoverCursor = 'default';
+    canvas.moveCursor = 'move';
+
+    const MIN_ZOOM = 0.1;
+    const MAX_ZOOM = 10;
+
+    const colorForLabel = name => labelMap[name] || '#ff0000';
+
+    const showFeedback = (message, type = 'info') => {
+        const existing = document.querySelector('.feedback-message');
+        if (existing) {existing.remove();}
+        
+        const feedback = document.createElement('div');
+        feedback.className = `feedback-message ${type}`;
+        feedback.textContent = message;
+        feedback.style.cssText = `
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: ${type === 'error' ? '#d32f2f' : '#1976d2'};
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+            z-index: 1000;
+            pointer-events: none;
+        `;
+        wrap.appendChild(feedback);
+        
+        setTimeout(() => {
+            if (feedback.parentNode) {
+                feedback.parentNode.removeChild(feedback);
+            }
+        }, 3000);
+    };
+
+    const saveState = () => {
+        const state = {
+            mode,
+            selectedLabel: labelSelect.value
+        };
+        vscode.setState(state);
+    };
+
+    const restoreState = () => {
+        if (previousState) {
+            if (previousState.selectedLabel && labelSelect.querySelector(`option[value="${previousState.selectedLabel}"]`)) {
+                labelSelect.value = previousState.selectedLabel;
+            }
+            setMode(previousState.mode || 'move');
+        }
+    };
+
+    const updateCounts = () => {
+        const counts = {};
+        for (const label of labelArray) {counts[label.name] = 0;}
+        canvas.getObjects().forEach(obj => {
+            if (obj.label && counts.hasOwnProperty(obj.label)) {counts[obj.label]++;}
+        });
+        sidebar.innerHTML = `
+            <h3>Instance Counts</h3>
+            ${Object.entries(counts).map(([label, count]) => {
+                const color = colorForLabel(label);
+                return `<div class="sidebar-item"><div class="color-dot" style="background:${color}"></div> ${label}: ${count}</div>`;
+            }).join('')}
+            ${isDrawingPolygon ? '<div class="drawing-hint">Click to add points<br>Right-click to finish<br>Press Escape to cancel</div>' : ''}
+        `;
+    };
+
+    const setMode = (newMode) => {
+        // Cancel any ongoing polygon drawing when switching modes
+        if (isDrawingPolygon && newMode !== 'polygon') {
+            cancelPolygonDrawing();
+        }
+        
+        mode = newMode;
+        for (const [name, btn] of Object.entries(modeButtons)) {
+            btn.classList.toggle('active', name === newMode);
+        }
+        
+        canvas.selection = (newMode === 'select');
+        canvas.isDrawingMode = false;
+        
+        // Update cursor based on mode
+        canvasEl.className = `${newMode}-mode`;
+        
+        // Handle polygon mode UI
+        if (newMode === 'polygon') {
+            canvas.hoverCursor = 'crosshair';
+            canvas.defaultCursor = 'crosshair';
+            showFeedback('Click to add points, right-click to finish polygon');
+        } else {
+            canvas.hoverCursor = 'default';
+            canvas.defaultCursor = 'default';
+            finishPolygonBtn.disabled = true;
+            cancelPolygonBtn.disabled = true;
+        }
+        
+        // Update button states
+        finishPolygonBtn.style.display = newMode === 'polygon' ? 'inline-block' : 'none';
+        cancelPolygonBtn.style.display = newMode === 'polygon' ? 'inline-block' : 'none';
+        
+        saveState();
+    };
+
+    const saveAnnotations = () => {
+        const annotations = canvas.getObjects().filter(obj => obj.label).map(obj => {
+            if (obj.type === 'polygon' && obj.points) {
+                const points = obj.points.map(p => ({
+                    x: p.x / imgW,
+                    y: p.y / imgH
+                }));
+                return {
+                    type: 'polygon',
+                    label: obj.label,
+                    points: points
+                };
+            }
+            return null;
+        }).filter(ann => ann !== null);
+        
+        vscode.postMessage({ type: 'saveAnnotation', annotation: annotations });
+    };
+
+    const createPolygonFromPoints = (points, label) => {
+        if (points.length < 3) {return null;}
+        
+        const color = colorForLabel(label);
+        const polygon = new fabric.Polygon(points, {
+            fill: color + '40',
+            stroke: color,
+            strokeWidth: 2,
+            selectable: true,
+            evented: true,
+            objectCaching: false
+        });
+        
+        polygon.label = label;
+        polygon.points = points;
+        
+        return polygon;
+    };
+
+    const startPolygonDrawing = () => {
+        isDrawingPolygon = true;
+        polygonPoints = [];
+        pointMarkers = [];
+        finishPolygonBtn.disabled = false;
+        cancelPolygonBtn.disabled = false;
+        canvas.selection = false;
+        canvas.forEachObject(obj => obj.selectable = false);
+        updateCounts();
+        showFeedback('Click to add points, right-click to finish');
+    };
+
+    const addPolygonPoint = (point) => {
+        polygonPoints.push(point);
+        
+        // Create visual feedback point
+        const circle = new fabric.Circle({
+            left: point.x - 4,
+            top: point.y - 4,
+            radius: 4,
+            fill: '#ff4444',
+            stroke: '#ffffff',
+            strokeWidth: 1,
+            selectable: false,
+            evented: false,
+            isPolygonPoint: true
+        });
+        canvas.add(circle);
+        pointMarkers.push(circle);
+        
+        // Update polygon preview
+        updatePolygonPreview();
+        
+        // Update UI
+        updateCounts();
+        canvas.renderAll();
+    };
+
+    const updatePolygonPreview = () => {
+        // Remove old preview
+        if (tempLine) {
+            canvas.remove(tempLine);
+            tempLine = null;
+        }
+        
+        if (polygonPoints.length > 1) {
+            const color = colorForLabel(labelSelect.value);
+            tempLine = new fabric.Polyline(polygonPoints, {
+                fill: 'transparent',
+                stroke: color,
+                strokeWidth: 2,
+                strokeDashArray: [5, 5],
+                selectable: false,
+                evented: false,
+                isPolygonTemp: true
+            });
+            canvas.add(tempLine);
+        }
+    };
+
+    const updatePreviewLine = (currentPoint) => {
+        if (previewLine) {
+            canvas.remove(previewLine);
+            previewLine = null;
+        }
+        
+        if (polygonPoints.length > 0 && currentPoint) {
+            const lastPoint = polygonPoints[polygonPoints.length - 1];
+            const color = colorForLabel(labelSelect.value);
+            
+            previewLine = new fabric.Line([lastPoint.x, lastPoint.y, currentPoint.x, currentPoint.y], {
+                stroke: color,
+                strokeWidth: 1,
+                strokeDashArray: [3, 3],
+                selectable: false,
+                evented: false,
+                isPreviewLine: true
+            });
+            canvas.add(previewLine);
+        }
+    };
+
+    const finishPolygonDrawing = () => {
+        if (polygonPoints.length < 3) {
+            showFeedback('Polygon must have at least 3 points', 'error');
+            return;
+        }
+        
+        const label = labelSelect.value;
+        const polygon = createPolygonFromPoints(polygonPoints, label);
+        
+        if (polygon) {
+            canvas.add(polygon);
+            cleanupPolygonDrawing();
+            updateCounts();
+            saveAnnotations(); // Auto-save when polygon is added
+            canvas.renderAll();
+            showFeedback(`Polygon added with label: ${label}`);
+        }
+    };
+
+    const cancelPolygonDrawing = () => {
+        cleanupPolygonDrawing();
+        showFeedback('Polygon drawing cancelled');
+    };
+
+    const cleanupPolygonDrawing = () => {
+        isDrawingPolygon = false;
+        polygonPoints = [];
+        
+        // Remove all temporary visual elements
+        canvas.getObjects().forEach(obj => {
+            if (obj.isPolygonPoint || obj.isPolygonTemp || obj.isPreviewLine) {
+                canvas.remove(obj);
+            }
+        });
+        
+        pointMarkers = [];
+        tempLine = null;
+        previewLine = null;
+        
+        finishPolygonBtn.disabled = true;
+        cancelPolygonBtn.disabled = true;
+        canvas.selection = (mode === 'select');
+        canvas.forEachObject(obj => obj.selectable = true);
+        canvas.renderAll();
+        updateCounts();
+    };
+
+    // Event handlers
+    canvas.on('mouse:down', (e) => {
+        if (mode === 'polygon' && isDrawingPolygon) {
+            if (e.e.button === 2) { // Right click
+                e.e.preventDefault();
+                finishPolygonDrawing();
+                return;
+            }
+            
+            if (e.e.button === 0) { // Left click
+                const pointer = canvas.getPointer(e.e);
+                addPolygonPoint(pointer);
+                return;
+            }
+        }
+        
+        if (mode === 'move') {
+            panning = true;
+            panStartX = e.e.clientX;
+            panStartY = e.e.clientY;
+            startVpt = canvas.viewportTransform.slice();
+        }
+    });
+
+    canvas.on('mouse:move', (e) => {
+        if (panning && mode === 'move') {
+            const deltaX = e.e.clientX - panStartX;
+            const deltaY = e.e.clientY - panStartY;
+            const vpt = startVpt.slice();
+            vpt[4] += deltaX;
+            vpt[5] += deltaY;
+            canvas.setViewportTransform(vpt);
+        }
+        
+        // Update preview line during polygon drawing
+        if (mode === 'polygon' && isDrawingPolygon) {
+            const pointer = canvas.getPointer(e.e);
+            updatePreviewLine(pointer);
+        }
+    });
+
+    canvas.on('mouse:up', (e) => {
+        if (panning) {
+            panning = false;
+        }
+    });
+
+    canvas.on('selection:created', (e) => {
+        deleteBtn.disabled = false;
+    });
+
+    canvas.on('selection:updated', (e) => {
+        deleteBtn.disabled = false;
+    });
+
+    canvas.on('selection:cleared', (e) => {
+        deleteBtn.disabled = true;
+    });
+
+    // Mouse wheel zoom
+    canvas.on('mouse:wheel', (opt) => {
+        const delta = opt.e.deltaY;
+        let zoom = canvas.getZoom();
+        zoom *= 0.999 ** delta;
+        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+        canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+        opt.e.preventDefault();
+        opt.e.stopPropagation();
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && isDrawingPolygon) {
+            cancelPolygonDrawing();
+        }
+    });
+
+    // Prevent right-click context menu
+    canvas.upperCanvasEl.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+    });
+
+    // Mode button handlers
+    polygonBtn.addEventListener('click', () => {
+        setMode('polygon');
+        startPolygonDrawing();
+    });
+
+    selectBtn.addEventListener('click', () => setMode('select'));
+    moveBtn.addEventListener('click', () => setMode('move'));
+    editBtn.addEventListener('click', () => setMode('edit'));
+
+    // Polygon control buttons
+    finishPolygonBtn.addEventListener('click', finishPolygonDrawing);
+    cancelPolygonBtn.addEventListener('click', cancelPolygonDrawing);
+
+    // Other button handlers
+    deleteBtn.addEventListener('click', () => {
+        const activeObjects = canvas.getActiveObjects();
+        if (activeObjects.length > 0) {
+            activeObjects.forEach(obj => canvas.remove(obj));
+            canvas.discardActiveObject();
+            updateCounts();
+            saveAnnotations(); // Auto-save when objects are deleted
+            canvas.renderAll();
+            showFeedback(`Deleted ${activeObjects.length} object(s)`);
+        }
+    });
+
+    saveBtn.addEventListener('click', saveAnnotations);
+    addClassBtn.addEventListener('click', () => vscode.postMessage({ type: 'requestAddLabel' }));
+    renameBtn.addEventListener('click', () => {
+        const current = labelSelect.value;
+        if (current) {vscode.postMessage({ type: 'requestRenameLabel', current });}
+    });
+    delClassBtn.addEventListener('click', () => {
+        const name = labelSelect.value;
+        if (name) {vscode.postMessage({ type: 'requestDeleteLabel', name });}
+    });
+
+    // Label selection handler
+    labelSelect.addEventListener('change', saveState);
+
+    // Load and display image
+    const img = new Image();
+    img.onload = () => {
+        imgW = img.width;
+        imgH = img.height;
+        
+        const maxCanvasW = window.innerWidth - 200;
+        const maxCanvasH = window.innerHeight - 100;
+        const scale = Math.min(maxCanvasW / imgW, maxCanvasH / imgH, 1);
+        const canvasW = imgW * scale;
+        const canvasH = imgH * scale;
+        
+        canvas.setWidth(canvasW);
+        canvas.setHeight(canvasH);
+        
+        const fabricImg = new fabric.Image(img, {
+            left: 0,
+            top: 0,
+            scaleX: scale,
+            scaleY: scale,
+            selectable: false,
+            evented: false
+        });
+        
+        canvas.add(fabricImg);
+        canvas.sendToBack(fabricImg);
+        
+        // Load existing annotations
+        if (window.initialAnnotations) {
+            window.initialAnnotations.forEach(ann => {
+                if (ann.type === 'polygon' && ann.points) {
+                    const scaledPoints = ann.points.map(p => ({
+                        x: p.x * imgW * scale,
+                        y: p.y * imgH * scale
+                    }));
+                    const polygon = createPolygonFromPoints(scaledPoints, ann.label);
+                    if (polygon) {
+                        canvas.add(polygon);
+                    }
+                }
+            });
+        }
+        
+        updateCounts();
+        canvas.renderAll();
+    };
+    
+    img.src = imageUrl;
+
+    // Message handler for VS Code communication
+    window.addEventListener('message', (event) => {
+        const message = event.data;
+        switch (message.type) {
+            case 'labelAdded':
+                const newLabel = message.label;
+                // If this is the first real label, remove the default 'Object' label
+                if (newLabel.removedDefault) {
+                    labelArray = labelArray.filter(l => l.name !== 'Object');
+                    delete labelMap['Object'];
+                }
+                labelArray.push(newLabel);
+                labelMap[newLabel.name] = newLabel.color;
+                labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
+                labelSelect.value = newLabel.name;
+                updateCounts();
+                break;
+            case 'labelRenamed':
+                const oldName = message.oldName;
+                const newName = message.newName;
+                labelArray.forEach(l => { if (l.name === oldName) {l.name = newName;} });
+                labelMap[newName] = labelMap[oldName];
+                delete labelMap[oldName];
+                labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
+                labelSelect.value = newName;
+                
+                // Update existing polygons
+                canvas.getObjects().forEach(obj => {
+                    if (obj.label === oldName) {
+                        obj.label = newName;
+                    }
+                });
+                
+                updateCounts();
+                canvas.renderAll();
+                break;
+            case 'labelDeleted':
+                const deletedName = message.name;
+                labelArray = labelArray.filter(l => l.name !== deletedName);
+                delete labelMap[deletedName];
+                labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
+                
+                // Remove polygons with deleted label
+                canvas.getObjects().forEach(obj => {
+                    if (obj.label === deletedName) {
+                        canvas.remove(obj);
+                    }
+                });
+                
+                updateCounts();
+                canvas.renderAll();
+                break;
+        }
+    });
+
+    // Initialize
+    restoreState();
+    updateCounts();
+})(); 

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { readProjectLabels, addLabelToProject, renameLabelInProject, deleteLabelFromProject } from './objectDetection';
+import { COLOR_PALETTE, readProjectLabels, addLabelToProject, renameLabelInProject, deleteLabelFromProject } from './objectDetection';
 
 function getNonce() {
 	let text = '';
@@ -12,24 +12,26 @@ function getNonce() {
 	return text;
 }
 
-function getClassificationWebviewContent(
+function getKeypointWebviewContent(
     webview: vscode.Webview,
     extensionUri: vscode.Uri,
     imageUrl: string,
     nonce: string,
     labels: { name: string; color: string }[],
-    classification?: any
+    annotations?: any[]
 ): string {
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'logic', 'classification.js'));
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles', 'classification.css'));
-    const htmlPath = vscode.Uri.joinPath(extensionUri, 'media', 'html', 'classification.html');
+    const fabricCdn = 'https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js';
+    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'logic', 'keypoint-detection.js'));
+    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles', 'keypoint-detection.css'));
+    const htmlPath = vscode.Uri.joinPath(extensionUri, 'media', 'html', 'keypoint-detection.html');
     let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
 
     const cspSource = webview.cspSource;
-    const csp = `default-src 'none'; img-src ${cspSource} data: https:; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';`;
+    const csp = `default-src 'none'; img-src ${cspSource} data: https:; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net;`;
 
     html = html.replace(/\${csp}/g, csp);
     html = html.replace(/\${nonce}/g, nonce);
+    html = html.replace(/\${fabricCdn}/g, fabricCdn);
     html = html.replace(/\${webviewScript}/g, scriptUri.toString());
     html = html.replace(/\${webviewStylesheet}/g, styleUri.toString());
 
@@ -39,7 +41,7 @@ function getClassificationWebviewContent(
         `<script nonce="${nonce}">
             window.imageUrl = "${imageUrl}";
             window.labels = ${JSON.stringify(labels)};
-            window.initialClassification = ${JSON.stringify(classification || null)};
+            window.initialAnnotations = ${JSON.stringify(annotations || null)};
         </script></head>`
     );
 
@@ -51,34 +53,34 @@ function getWorkspaceRoot(): vscode.Uri | undefined {
 	return ws && ws.length ? ws[0].uri : undefined;
 }
 
-export async function handleImageClassification(
+export async function handleKeypointDetection(
 	context: vscode.ExtensionContext,
 	target: vscode.Uri,
 	project: string
 ) {
 	const labels = await readProjectLabels(project);
-	// Attempt to load existing classification
-	let existingClassification: any | undefined = undefined;
+	// Attempt to load existing annotations
+	let existingAnnotations: any[] | undefined = undefined;
 	try {
 		const root = getWorkspaceRoot();
 		if (root) {
-			const classPath = vscode.Uri.joinPath(root, '/.annovis/classifications', project, path.basename(target.fsPath) + '.json');
-			const bytes = await vscode.workspace.fs.readFile(classPath);
+			const annPath = vscode.Uri.joinPath(root, '/.annovis/keypoints', project, path.basename(target.fsPath) + '.json');
+			const bytes = await vscode.workspace.fs.readFile(annPath);
 			const data = JSON.parse(Buffer.from(bytes).toString());
 			
 			// Handle both new metadata format and legacy format
-			if (data.metadata && data.classification) {
-				existingClassification = data.classification;
-			} else if (data.labels || data.timestamp) {
-				// Legacy format - direct classification object
-				existingClassification = data;
+			if (data.metadata && data.annotations) {
+				existingAnnotations = data.annotations;
+			} else if (Array.isArray(data)) {
+				// Legacy format - direct array of annotations
+				existingAnnotations = data;
 			}
 		}
 	} catch {/* file may not exist – that is fine */}
 
 	const panel = vscode.window.createWebviewPanel(
-		'annovisImageClassification',
-		`Image Classification - ${path.basename(target.fsPath)} (${project})`,
+		'annovisKeypointDetection',
+		`Keypoint Detection - ${path.basename(target.fsPath)} (${project})`,
 		vscode.ViewColumn.One, {
 			enableScripts: true,
 			retainContextWhenHidden: true,
@@ -91,20 +93,20 @@ export async function handleImageClassification(
 	const imageUri = panel.webview.asWebviewUri(target);
 	const nonce = getNonce();
 
-	panel.webview.html = getClassificationWebviewContent(
+	panel.webview.html = getKeypointWebviewContent(
 		panel.webview,
 		context.extensionUri,
 		imageUri.toString(),
 		nonce,
 		labels,
-		existingClassification
+		existingAnnotations
 	);
 
 	// Message handler for webview interactions
 	panel.webview.onDidReceiveMessage(async (msg) => {
 		switch (msg.type) {
 			case 'requestAddLabel': {
-				const labelName = await vscode.window.showInputBox({ prompt: 'New label name' });
+				const labelName = await vscode.window.showInputBox({ prompt: 'New keypoint label name' });
 				if (!labelName) { return; }
 				const { name, color, removedDefault } = await addLabelToProject(project, labelName);
 				panel.webview.postMessage({ type: 'labelAdded', label: { name, color, removedDefault } });
@@ -112,7 +114,7 @@ export async function handleImageClassification(
 			}
 			case 'requestRenameLabel': {
 				const current: string = msg.current;
-				const newName = await vscode.window.showInputBox({ prompt: `Rename label '${current}' to:` });
+				const newName = await vscode.window.showInputBox({ prompt: `Rename keypoint label '${current}' to:` });
 				if (!newName || newName === current) { return; }
 				const res = await renameLabelInProject(project, current, newName);
 				if (res) {
@@ -122,34 +124,34 @@ export async function handleImageClassification(
 			}
 			case 'requestDeleteLabel': {
 				const name: string = msg.name;
-				const confirm = await vscode.window.showWarningMessage(`Delete label '${name}' and its classifications?`, { modal: true }, 'Delete');
+				const confirm = await vscode.window.showWarningMessage(`Delete keypoint label '${name}' and its annotations?`, { modal: true }, 'Delete');
 				if (confirm !== 'Delete') { return; }
 				await deleteLabelFromProject(project, name);
 				panel.webview.postMessage({ type: 'labelDeleted', name });
 				break;
 			}
-			case 'saveClassification': {
-				const classification = msg.classification;
+			case 'saveAnnotation': {
+				const annotations = msg.annotation;
 				const root = getWorkspaceRoot();
 				if (!root) { return; }
-				const classDir = vscode.Uri.joinPath(root, '/.annovis/classifications', project);
-				await vscode.workspace.fs.createDirectory(classDir);
-				const classFile = vscode.Uri.joinPath(classDir, path.basename(target.fsPath) + '.json');
+				const annDir = vscode.Uri.joinPath(root, '/.annovis/keypoints', project);
+				await vscode.workspace.fs.createDirectory(annDir);
+				const annFile = vscode.Uri.joinPath(annDir, path.basename(target.fsPath) + '.json');
 				
-				// Add metadata to classification
-				const classificationData = {
+				// Add metadata to annotations
+				const annotationData = {
 					metadata: {
 						projectName: project,
-						projectType: 'image-classification' as const,
+						projectType: 'keypoint-detection' as const,
 						imageName: path.basename(target.fsPath),
 						created: new Date().toISOString(),
 						version: '1.0'
 					},
-					classification: classification
+					annotations: annotations
 				};
 				
-				await vscode.workspace.fs.writeFile(classFile, Buffer.from(JSON.stringify(classificationData, null, 2)));
-				vscode.window.showInformationMessage('Classification saved');
+				await vscode.workspace.fs.writeFile(annFile, Buffer.from(JSON.stringify(annotationData, null, 2)));
+				vscode.window.showInformationMessage('Keypoint annotations saved');
 				break;
 			}
 			case 'showError': {

@@ -10,7 +10,7 @@
 <body>
     <div id="toolbar">
         <div class="classification-controls">
-            <button id="clearBtn">Clear Selection</button>
+            <button id="clearBtn">Clear All</button>
             <button id="addClassBtn">Add Class</button>
             <button id="renameBtn">Rename Class</button>
             <button id="delClassBtn">Delete Class</button>
@@ -20,14 +20,13 @@
     
     <div class="main-content">
         <div id="sidebar">
-            <h3>Available Labels</h3>
-            <div id="labelsList"></div>
+            <h3>Classify Image</h3>
+            <div id="classificationChoices" class="classification-choices"></div>
             
-            <h3>Selected Labels</h3>
-            <div id="selectedLabels"></div>
-            
-            <h3>Classification Results</h3>
-            <div id="classificationResults"></div>
+            <div id="selectedLabels" class="selected-labels-summary">
+                <h4>Selected Labels</h4>
+                <div id="selectedLabelsList"></div>
+            </div>
         </div>
         
         <div id="imageContainer">

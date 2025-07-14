@@ -25,9 +25,9 @@ function getWebviewContent(
     annotations?: any[]
 ): string {
     const fabricCdn = 'https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js';
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'webview.js'));
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'webview.css'));
-    const htmlPath = vscode.Uri.joinPath(extensionUri, 'media', 'webview.html');
+    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'logic', 'object-detection.js'));
+    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles', 'object-detection.css'));
+    const htmlPath = vscode.Uri.joinPath(extensionUri, 'media', 'html', 'object-detection.html');
     let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
 
     const cspSource = webview.cspSource;
@@ -59,7 +59,7 @@ function getWorkspaceRoot(): vscode.Uri | undefined {
 
 export async function readProjectLabels(project: string): Promise<{name: string, color: string}[]> {
 	const root = getWorkspaceRoot();
-	if (!root) return [];
+	if (!root) {return [];}
 	const file = vscode.Uri.joinPath(root, '/.annovis/projects', project, 'project.json');
 	try {
 		const bytes = await vscode.workspace.fs.readFile(file);
@@ -82,7 +82,12 @@ export async function addLabelToProject(project: string, labelName: string): Pro
 	const root = getWorkspaceRoot();
 	if (root) {
 		const file = vscode.Uri.joinPath(root, '/.annovis/projects', project, 'project.json');
-		await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify({labels}, null, 2)));
+		
+		// Read the existing project data to preserve all fields
+		const bytes = await vscode.workspace.fs.readFile(file);
+		const existingData = JSON.parse(Buffer.from(bytes).toString());
+		existingData.labels = labels;
+		await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify(existingData, null, 2)));
 	}
 	return {name: labelName, color: nextColor, removedDefault};
 }
@@ -90,12 +95,17 @@ export async function addLabelToProject(project: string, labelName: string): Pro
 export async function renameLabelInProject(project: string, oldName: string, newName: string) {
 	const labels = await readProjectLabels(project);
 	const l = labels.find(l => l.name === oldName);
-	if (!l) return null;
+	if (!l) {return null;}
 	l.name = newName;
 	const root = getWorkspaceRoot();
 	if (root) {
 		const file = vscode.Uri.joinPath(root, '/.annovis/projects', project, 'project.json');
-		await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify({labels}, null, 2)));
+		
+		// Read the existing project data to preserve all fields
+		const bytes = await vscode.workspace.fs.readFile(file);
+		const existingData = JSON.parse(Buffer.from(bytes).toString());
+		existingData.labels = labels;
+		await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify(existingData, null, 2)));
 	}
 	return l;
 }
@@ -106,7 +116,12 @@ export async function deleteLabelFromProject(project: string, name: string) {
 	const root = getWorkspaceRoot();
 	if (root) {
 		const file = vscode.Uri.joinPath(root, '/.annovis/projects', project, 'project.json');
-		await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify({labels}, null, 2)));
+		
+		// Read the existing project data to preserve all fields
+		const bytes = await vscode.workspace.fs.readFile(file);
+		const existingData = JSON.parse(Buffer.from(bytes).toString());
+		existingData.labels = labels;
+		await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify(existingData, null, 2)));
 	}
 	return labels;
 }
@@ -166,8 +181,8 @@ export async function handleObjectDetection(
 			case 'requestAddLabel': {
 				const labelName = await vscode.window.showInputBox({ prompt: 'New label name' });
 				if (!labelName) { return; }
-				const { name, color } = await addLabelToProject(project, labelName);
-				panel.webview.postMessage({ type: 'labelAdded', label: { name, color } });
+				const { name, color, removedDefault } = await addLabelToProject(project, labelName);
+				panel.webview.postMessage({ type: 'labelAdded', label: { name, color, removedDefault } });
 				break;
 			}
 			case 'requestRenameLabel': {

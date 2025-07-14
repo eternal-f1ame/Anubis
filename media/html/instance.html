@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="${csp}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instance Detection</title>
+    <link rel="stylesheet" href="${webviewStylesheet}">
+</head>
+<body>
+    <div id="toolbar">
+        <div class="toolbar-section">
+            <div class="mode-buttons">
+                <button id="polygonModeBtn" class="mode-btn">Draw Polygon</button>
+                <button id="selectModeBtn" class="mode-btn">Select</button>
+                <button id="moveModeBtn" class="mode-btn">Move</button>
+                <button id="editModeBtn" class="mode-btn">Edit</button>
+            </div>
+        </div>
+        
+        <div class="toolbar-section">
+            <label class="label-selector">Label:
+                <select id="labelSelect"></select>
+            </label>
+        </div>
+        
+        <div class="toolbar-section">
+            <button id="finishPolygonBtn" class="action-btn" disabled>Finish Polygon</button>
+            <button id="cancelPolygonBtn" class="action-btn" disabled>Cancel</button>
+        </div>
+        
+        <div class="toolbar-section">
+            <button id="deleteBtn" class="action-btn" disabled>Delete</button>
+            <button id="saveBtn" class="action-btn">Save</button>
+        </div>
+        
+        <div class="toolbar-section">
+            <button id="addClassBtn" class="action-btn">Add Class</button>
+            <button id="renameBtn" class="action-btn">Rename Class</button>
+            <button id="delClassBtn" class="action-btn">Delete Class</button>
+        </div>
+    </div>
+    
+    <div class="main-content">
+        <div id="sidebar">
+            <h3>Instance Counts</h3>
+            <div class="sidebar-content"></div>
+        </div>
+        <div id="canvasWrap">
+            <canvas id="c"></canvas>
+        </div>
+    </div>
+
+    <script nonce="${nonce}" src="${fabricCdn}"></script>
+    <script nonce="${nonce}" src="${webviewScript}"></script>
+</body>
+</html> 

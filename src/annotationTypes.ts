@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-export type AnnotationType = 'object-detection' | 'image-classification';
+export type AnnotationType = 'object-detection' | 'image-classification' | 'instance-detection' | 'keypoint-detection';
 
 export interface AnnotationTypeOption {
 	label: string;
@@ -19,6 +19,16 @@ export async function selectAnnotationType(): Promise<AnnotationType | undefined
 			label: 'Image Classification',
 			description: 'Classify the entire image with labels',
 			id: 'image-classification'
+		},
+		{
+			label: 'Instance Detection',
+			description: 'Draw precise outlines around object instances',
+			id: 'instance-detection'
+		},
+		{
+			label: 'Keypoint Detection',
+			description: 'Mark specific points and joints on objects',
+			id: 'keypoint-detection'
 		}
 	];
 	

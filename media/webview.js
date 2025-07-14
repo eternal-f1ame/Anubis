@@ -1,9 +1,6 @@
 (() => {
     const vscode = acquireVsCodeApi();
-    
-    // Get previous state from VS Code
-    const previousState = vscode.getState();
-    
+
     const canvasEl = document.getElementById('c');
     const wrap = document.getElementById('canvasWrap');
     const labelSelect = document.getElementById('labelSelect');
@@ -18,225 +15,299 @@
     const renameBtn = document.getElementById('renameBtn');
     const delClassBtn = document.getElementById('delClassBtn');
 
+    // These will be provided by the extension
     const imageUrl = window.imageUrl;
     let labelArray = window.labels;
     let labelMap = Object.fromEntries(labelArray.map(l => [l.name, l.color]));
-    let imgW = 0, imgH = 0;
-    let mode = previousState?.mode || 'move';
-    let drawing = false, rect, startX, startY;
-    let panning = false, panStartX = 0, panStartY = 0, startVpt;
 
     labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
 
+    // Initialise canvas with group selection enabled (will be toggled per mode)
     const canvas = new fabric.Canvas(canvasEl, { selection: true });
-    canvas.hoverCursor = 'default';
-    canvas.moveCursor = 'move';
 
+    // ---------- Zoom & pan config ----------
     const MIN_ZOOM = 0.1;
     const MAX_ZOOM = 10;
 
-    const colorForLabel = name => labelMap[name] || '#ff0000';
-
-    const saveState = () => {
-        const state = {
-            mode,
-            selectedLabel: labelSelect.value
-        };
-        vscode.setState(state);
-    };
-
-    const restoreState = () => {
-        if (previousState) {
-            if (previousState.selectedLabel && labelSelect.querySelector(`option[value="${previousState.selectedLabel}"]`)) {
-                labelSelect.value = previousState.selectedLabel;
-            }
-            // Only restore mode, not canvas state which interferes with operations
-            if (previousState.mode) {
-                setTimeout(() => setMode(previousState.mode), 50);
-            }
-        }
-    };
-
-    const updateCounts = () => {
-        const counts = {};
-        canvas.getObjects('rect').forEach(r => counts[r.label] = (counts[r.label] || 0) + 1);
-        sidebar.innerHTML = Object.entries(counts).map(([name, count]) => {
-            const col = colorForLabel(name);
-            return `<div class="sidebar-item"><span class="color-dot" style="background:${col}"></span>${name} ${count}</div>`;
-        }).join('');
-        saveState();
-    };
-
-    const setMovementLock = lock => {
-        canvas.getObjects('rect').forEach(r => {
-            r.lockMovementX = lock;
-            r.lockMovementY = lock;
-            r.selectable = !lock;
-            r.evented = !lock;
+    function showLabelPicker(x, y, target) {
+        const sel = document.createElement('select');
+        labelArray.forEach(l => {
+            const o = document.createElement('option');
+            o.value = l.name;
+            o.textContent = l.name;
+            sel.appendChild(o);
         });
-    };
+        sel.value = target.label;
+        sel.style.position = 'absolute';
+        sel.style.left = x + 'px';
+        sel.style.top = y + 'px';
+        document.body.appendChild(sel);
+        sel.focus();
+        sel.onchange = () => {
+            target.label = sel.value;
+            const col = colorForLabel(sel.value);
+            target.set({ stroke: col, fill: col + '33' });
+            canvas.requestRenderAll();
+            updateCounts();
+            document.body.removeChild(sel);
+        };
+        sel.onblur = () => document.body.removeChild(sel);
+    }
 
-    const clampRect = rect => {
-        if (!imgW || !imgH) return;
-        const w = rect.width * rect.scaleX;
-        const h = rect.height * rect.scaleY;
-        let newLeft = Math.max(0, Math.min(rect.left, imgW - w));
-        let newTop = Math.max(0, Math.min(rect.top, imgH - h));
-        rect.set({ left: newLeft, top: newTop });
-    };
+    let imgW = 0, imgH = 0; // store image dimensions
 
-    const setMode = newMode => {
-        mode = newMode;
-        Object.values(modeButtons).forEach(b => b.classList.remove('active'));
-        modeButtons[newMode].classList.add('active');
-        canvas.selection = newMode === 'select';
-        canvas.skipTargetFind = newMode !== 'select';
-        setMovementLock(newMode !== 'select');
-        canvas.discardActiveObject();
-        deleteBtn.disabled = true;
-
-        const cursors = { move: 'grab', draw: 'crosshair', select: 'default' };
-        wrap.style.cursor = cursors[newMode];
-        saveState();
-    };
-
-    const saveAnnotations = () => {
-        const w = imgW || canvas.getWidth();
-        const h = imgH || canvas.getHeight();
-        const annotations = canvas.getObjects('rect').map(r => ({
-            label: r.label,
-            x: r.left / w,
-            y: r.top / h,
-            width: r.width / w,
-            height: r.height / h
-        }));
-        vscode.postMessage({ type: 'saveAnnotation', annotation: annotations });
-    };
-
-    // Load image and initial annotations
     fabric.Image.fromURL(imageUrl, img => {
         canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
         canvas.setWidth(img.width);
         canvas.setHeight(img.height);
+
         imgW = img.width;
         imgH = img.height;
 
+        // Fit the image inside the available viewport on first load
         const scale = Math.min(wrap.clientWidth / img.width, wrap.clientHeight / img.height, 1);
         canvas.setZoom(scale);
         const vpt = canvas.viewportTransform;
         vpt[4] = (wrap.clientWidth - img.width * scale) / 2;
         vpt[5] = (wrap.clientHeight - img.height * scale) / 2;
 
+        // Render any provided annotations
         if (window.initialAnnotations) {
             window.initialAnnotations.forEach(a => {
                 const col = colorForLabel(a.label);
-                canvas.add(new fabric.Rect({
-                    left: a.x * imgW, top: a.y * imgH,
-                    width: a.width * imgW, height: a.height * imgH,
-                    fill: col + '33', stroke: col, strokeWidth: 1,
-                    selectable: true, label: a.label
-                }));
+                const r = new fabric.Rect({
+                    left: a.x * imgW,
+                    top: a.y * imgH,
+                    width: a.width * imgW,
+                    height: a.height * imgH,
+                    fill: col + '33',
+                    stroke: col,
+                    strokeWidth: 1,
+                    selectable: true,
+                    label: a.label,
+                });
+                canvas.add(r);
             });
             updateCounts();
+            // Ensure newly added rectangles respect current mode interaction rules
             setMovementLock(mode !== 'select');
         }
-        // Restore state after canvas is fully loaded
-        setTimeout(restoreState, 200);
+
         canvas.requestRenderAll();
     });
 
-    // Mode switching
+    let mode = 'move';
+    let drawing = false,
+        rect, startX, startY;
+
+    // No right-click moving anymore
+
+    // Mode buttons listeners
     drawBtn.addEventListener('click', () => setMode('draw'));
     selectBtn.addEventListener('click', () => setMode('select'));
     moveBtn.addEventListener('click', () => setMode('move'));
 
-    // Pan implementation
+    function setMode(newMode) {
+        mode = newMode;
+        // update button highlight
+        Object.values(modeButtons).forEach(b => b.classList.remove('active'));
+        modeButtons[newMode].classList.add('active');
+        canvas.selection = newMode === 'select';
+        // Re-apply selection behaviour each time we toggle so that
+        // partial-overlap marquee selection keeps working even after
+        // switching modes.
+        canvas.selectionFullyContained = false;
+        canvas.perPixelTargetFind = false;
+        // Disable target finding in any non-select mode so clicks on rects do nothing
+        canvas.skipTargetFind = newMode !== 'select';
+
+        // Lock movement when not in select mode
+        setMovementLock(newMode !== 'select');
+        canvas.discardActiveObject();
+        deleteBtn.disabled = true;
+
+        // Update cursor cues
+        if (newMode === 'move') {
+            wrap.style.cursor = 'grab';
+        } else if (newMode === 'draw') {
+            wrap.style.cursor = 'crosshair';
+        } else {
+            wrap.style.cursor = 'default';
+        }
+    }
+
+    // ----------------------------------
+    // Pan (move) implementation
+    // ----------------------------------
+    let panning = false, panStartX = 0, panStartY = 0, startVpt;
+
     wrap.addEventListener('mousedown', e => {
-        if (mode !== 'move' || e.button !== 0) return;
+        if (mode !== 'move' || e.button !== 0) {return;} // left button only
         panning = true;
         wrap.style.cursor = 'grabbing';
         panStartX = e.clientX;
         panStartY = e.clientY;
-        startVpt = canvas.viewportTransform.slice();
+        startVpt = canvas.viewportTransform.slice(); // clone current VPT
         e.preventDefault();
     });
 
     window.addEventListener('mousemove', e => {
-        if (!panning) return;
+        if (!panning) {return;}
         const dx = e.clientX - panStartX;
         const dy = e.clientY - panStartY;
         const vpt = startVpt.slice();
         vpt[4] += dx;
         vpt[5] += dy;
         canvas.setViewportTransform(vpt);
+        // refresh coords so hit-testing & marquee selection stay accurate
         canvas.forEachObject(obj => obj.setCoords());
         canvas.requestRenderAll();
     });
 
     window.addEventListener('mouseup', () => {
-        if (!panning) return;
+        if (!panning) {return;}
         panning = false;
         wrap.style.cursor = 'grab';
     });
 
-    // Canvas events
+    function colorForLabel(name) {
+        return labelMap[name] || '#ff0000';
+    }
+
+    // Lock/unlock movement of rectangles when in draw mode
+    function setMovementLock(lock){
+        canvas.getObjects('rect').forEach(r=>{
+            r.lockMovementX = lock;
+            r.lockMovementY = lock;
+            r.selectable = !lock;
+            r.evented = !lock; // prevents hover cursor change
+        });
+    }
+
+    // Helper: make a rectangle the active selection and sync toolbar state
+    function selectRect(r) {
+        canvas.setActiveObject(r);
+        deleteBtn.disabled = false;
+        labelSelect.value = r.label || labelSelect.options[0].value;
+        canvas.requestRenderAll();
+    }
+
+    // Keep rectangle within image bounds
+    function clampRect(rect){
+        if(!imgW || !imgH) return;
+        const w = rect.width * rect.scaleX;
+        const h = rect.height * rect.scaleY;
+        let newLeft = rect.left;
+        let newTop = rect.top;
+        if(newLeft < 0) newLeft = 0;
+        if(newTop < 0) newTop = 0;
+        if(newLeft + w > imgW) newLeft = imgW - w;
+        if(newTop + h > imgH) newTop = imgH - h;
+        rect.set({left:newLeft, top:newTop});
+    }
+
+    canvas.on('object:moving', e => {
+        // Keep rectangles within image bounds while they are being dragged
+        if (e.target && e.target.type === 'rect') {
+            clampRect(e.target);
+        }
+    });
+
+    canvas.on('object:scaling', e=>{
+        if(e.target && e.target.type==='rect'){ clampRect(e.target); }
+    });
+
+    function updateCounts() {
+        const counts = {};
+        canvas.getObjects('rect').forEach(r => {
+            counts[r.label] = (counts[r.label] || 0) + 1;
+        });
+        sidebar.innerHTML = Object.entries(counts).map(([name, count]) => {
+            const col = colorForLabel(name);
+            return `<div class="sidebar-item"><span class="color-dot" style="background:${col}"></span>${name} ${count}</div>`;
+        }).join('');
+    }
+
     canvas.on('mouse:down', opt => {
+        // In Select mode, show a move cursor only while the mouse is actively pressed on a rectangle
         if (mode === 'select') {
             if (opt.target && opt.target.type === 'rect') {
-                opt.target._startLeft = opt.target.left;
-                opt.target._startTop = opt.target.top;
                 wrap.style.cursor = 'move';
             } else {
+                // Clicked outside any rectangle, keep the default cursor
                 wrap.style.cursor = 'default';
             }
         }
 
-        if (mode !== 'draw' || opt.e.button !== 0) return;
+        // Prevent selecting / moving boxes in non-select modes
+        if (mode !== 'select' && opt.target && opt.target.type === 'rect') {
+            return;
+        }
+
+        if (mode !== 'draw' || opt.e.button !== 0) {return;} // only left draw
         const ptr = canvas.getPointer(opt.e);
         drawing = true;
         startX = ptr.x;
         startY = ptr.y;
         const col = colorForLabel(labelSelect.value);
         rect = new fabric.Rect({
-            left: startX, top: startY, width: 0, height: 0,
-            fill: col + '33', stroke: col, strokeWidth: 1,
-            selectable: true, label: labelSelect.value, objectCaching: false
+            left: startX,
+            top: startY,
+            width: 0,
+            height: 0,
+            fill: col + '33',
+            stroke: col,
+            strokeWidth: 1,
+            selectable: true,
+            label: labelSelect.value,
+            objectCaching: false
         });
         canvas.add(rect);
     });
 
     canvas.on('mouse:move', opt => {
-        if (!drawing) return;
+        // Update the in-progress rectangle only while drawing
+        if (!drawing) {return;}
         const p = canvas.getPointer(opt.e);
-        const w = p.x - startX, h = p.y - startY;
+        const w = p.x - startX,
+            h = p.y - startY;
         let left = w < 0 ? p.x : startX;
         let top = h < 0 ? p.y : startY;
         let width = Math.abs(w);
         let height = Math.abs(h);
-        
-        if (left < 0) { width += left; left = 0; }
-        if (top < 0) { height += top; top = 0; }
-        if (left + width > imgW) width = imgW - left;
-        if (top + height > imgH) height = imgH - top;
-        
+        // clamp drawing to image bounds
+        if(left < 0) { width += left; left = 0; }
+        if(top < 0) { height += top; top = 0; }
+        if(left + width > imgW) { width = imgW - left; }
+        if(top + height > imgH) { height = imgH - top; }
         rect.set({ left, top, width, height });
         canvas.requestRenderAll();
     });
 
     canvas.on('mouse:up', opt => {
+        // Always reset any temporary cursor state when the mouse is released
         if (mode === 'select') {
             wrap.style.cursor = 'default';
         }
-        if (!drawing) return;
+
+        // If we were not in the middle of a drawing operation, bail out early
+        if (!drawing) {
+            return;
+        }
+
+        // We *were* drawing – finish creating the rectangle
         drawing = false;
+        // if the rect is too small, delete it
         if (rect.width < 10 || rect.height < 10) {
             canvas.remove(rect);
             return;
         }
+
+        // Ensure coordinates are up-to-date for accurate selection hit-testing
         rect.setCoords();
-        canvas.setActiveObject(rect);
-        deleteBtn.disabled = false;
-        labelSelect.value = rect.label || labelSelect.options[0].value;
+        // Automatically select the newly created rectangle
+        selectRect(rect);
+        // Lock movement if not in select mode to prevent accidental drags
         if (mode !== 'select') {
             rect.lockMovementX = true;
             rect.lockMovementY = true;
@@ -244,81 +315,34 @@
             rect.evented = false;
         }
         updateCounts();
-        saveAnnotations();
+        scheduleAutoSave();
         canvas.requestRenderAll();
     });
 
-    canvas.on('object:moving', e => {
-        const t = e.target;
-        if (!t || t.type !== 'rect') return;
-        if (!e.e || e.e.buttons === 0) {
-            if (typeof t._startLeft === 'number' && typeof t._startTop === 'number') {
-                t.set({ left: t._startLeft, top: t._startTop });
-                t.setCoords();
-                canvas.requestRenderAll();
-            }
-            return;
-        }
-        clampRect(t);
-    });
-
-    canvas.on('object:scaling', e => {
-        if (e.target && e.target.type === 'rect') clampRect(e.target);
-    });
-
-    canvas.on('selection:created', e => {
-        const obj = e.selected[0];
-        if (obj) {
-            deleteBtn.disabled = false;
-            labelSelect.value = obj.label || labelSelect.options[0].value;
-        }
-    });
-
-    canvas.on('selection:updated', e => {
-        const obj = e.selected[0];
-        if (obj) {
-            deleteBtn.disabled = false;
-            labelSelect.value = obj.label || labelSelect.options[0].value;
-        }
-    });
-
+    canvas.on('selection:created', syncToolbar);
+    canvas.on('selection:updated', syncToolbar);
     canvas.on('selection:cleared', () => {
         deleteBtn.disabled = true;
     });
 
-    canvas.on('object:added', updateCounts);
-    canvas.on('object:removed', updateCounts);
-    canvas.on('object:modified', () => {
-        updateCounts();
-        saveAnnotations();
-    });
+    function syncToolbar(e) {
+        const obj = e.selected[0];
+        if (obj) {
+            deleteBtn.disabled = false;
+            labelSelect.value = obj.label || labelSelect.options[0].value;
+        }
+    }
 
-    canvas.on('selection:created', saveState);
-    canvas.on('selection:updated', saveState);
-    canvas.on('selection:cleared', saveState);
-
-    canvas.on('mouse:wheel', opt => {
-        if (!opt.e.ctrlKey) return;
-        let delta = opt.e.deltaY;
-        let zoom = canvas.getZoom() * Math.pow(0.999, delta);
-        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
-        const ptr = canvas.getPointer(opt.e);
-        canvas.zoomToPoint(new fabric.Point(ptr.x, ptr.y), zoom);
-        canvas.forEachObject(obj => obj.setCoords());
-        opt.e.preventDefault();
-        opt.e.stopPropagation();
-    });
-
-    // UI event handlers
     labelSelect.addEventListener('change', () => {
         canvas.getActiveObjects().forEach(o => {
             o.label = labelSelect.value;
-            const col = colorForLabel(labelSelect.value);
-            o.set({ stroke: col, fill: col + '33' });
+            o.set({
+                stroke: colorForLabel(labelSelect.value),
+                fill: colorForLabel(labelSelect.value) + '33'
+            });
         });
         canvas.requestRenderAll();
         updateCounts();
-        saveState();
     });
 
     deleteBtn.addEventListener('click', () => {
@@ -326,31 +350,35 @@
         canvas.discardActiveObject();
         canvas.requestRenderAll();
         deleteBtn.disabled = true;
+        // updateCounts will be triggered by the 'object:removed' event listener
     });
 
-    saveBtn.addEventListener('click', saveAnnotations);
-
     addClassBtn.addEventListener('click', () => {
-        vscode.postMessage({ type: 'requestAddLabel' });
+        vscode.postMessage({
+            type: 'requestAddLabel'
+        });
     });
 
     renameBtn.addEventListener('click', () => {
-        vscode.postMessage({ type: 'requestRenameLabel', current: labelSelect.value });
+        vscode.postMessage({
+            type: 'requestRenameLabel',
+            current: labelSelect.value
+        });
     });
 
     delClassBtn.addEventListener('click', () => {
-        vscode.postMessage({ type: 'requestDeleteLabel', name: labelSelect.value });
+        vscode.postMessage({
+            type: 'requestDeleteLabel',
+            name: labelSelect.value
+        });
     });
 
-    window.addEventListener('keydown', e => {
-        if (e.key === 'Delete' && !deleteBtn.disabled) deleteBtn.click();
-    });
-
-    // Message handling
     window.addEventListener('message', ev => {
         const msg = ev.data;
         if (msg.type === 'labelAdded') {
-            const { label } = msg;
+            const {
+                label
+            } = msg;
             const opt = document.createElement('option');
             opt.value = label.name;
             opt.textContent = label.name;
@@ -369,18 +397,23 @@
             canvas.getObjects('rect').forEach(r => {
                 if (r.label === msg.oldName) {
                     r.label = msg.newName;
-                    r.set({ stroke: oldColor, fill: oldColor + '33' });
+                    r.set({
+                        stroke: oldColor,
+                        fill: oldColor + '33'
+                    });
                 }
             });
             delete labelMap[msg.oldName];
             labelMap[msg.newName] = oldColor;
             labelArray.forEach(l => {
-                if (l.name === msg.oldName) l.name = msg.newName;
+                if (l.name === msg.oldName) {l.name = msg.newName;}
             });
             updateCounts();
         } else if (msg.type === 'labelDeleted') {
             [...labelSelect.options].forEach(o => {
-                if (o.value === msg.name) o.remove();
+                if (o.value === msg.name) {
+                    o.remove();
+                }
             });
             canvas.getObjects('rect').filter(r => r.label === msg.name).forEach(r => canvas.remove(r));
             delete labelMap[msg.name];
@@ -392,5 +425,100 @@
         }
     });
 
+    window.addEventListener('keydown', e => {
+        if (e.key === 'Delete' && !deleteBtn.disabled) {deleteBtn.click();}
+    });
+
+    // Save annotations using relative coordinates so they are robust to image resizing
+    saveBtn.addEventListener('click', () => {
+        // Determine current image dimensions
+        const imgW = canvas.backgroundImage ? canvas.backgroundImage.width : canvas.getWidth();
+        const imgH = canvas.backgroundImage ? canvas.backgroundImage.height : canvas.getHeight();
+
+        const annotations = canvas.getObjects('rect').map(r => ({
+            label: r.label,
+            // Normalize coordinates and size
+            x: r.left / imgW,
+            y: r.top / imgH,
+            width: r.width / imgW,
+            height: r.height / imgH
+        }));
+
+        vscode.postMessage({
+            type: 'saveAnnotation',
+            annotation: annotations
+        });
+    });
+
+    canvas.on('object:added', updateCounts);
+    canvas.on('object:removed', updateCounts);
+    canvas.on('object:modified', updateCounts);
+
+    // ---------------- Auto-save ----------------
+    let saveDebounce = null;
+    function scheduleAutoSave(){
+        if(saveDebounce){ clearTimeout(saveDebounce); }
+        saveDebounce = setTimeout(doSave, 400);
+    }
+
+    function doSave(){
+        saveDebounce = null;
+        // Determine image dimensions for relative coords
+        const w = imgW || canvas.getWidth();
+        const h = imgH || canvas.getHeight();
+        const annotations = canvas.getObjects('rect').map(r=>({
+            label:r.label,
+            x:r.left / w,
+            y:r.top / h,
+            width:r.width / w,
+            height:r.height / h
+        }));
+        vscode.postMessage({type:'saveAnnotation', annotation:annotations});
+    }
+
+    canvas.on('object:removed', ()=>{ scheduleAutoSave(); });
+    canvas.on('object:modified', ()=>{ scheduleAutoSave(); });
+
+    // keep manual Save button for explicit save if user wants
+
+    canvas.on('mouse:dblclick', opt => {
+        if (opt.target && opt.target.type === 'rect') {
+            const p = canvas.getPointer(opt.e);
+            showLabelPicker(p.x, p.y, opt.target);
+        }
+    });
+
+    canvas.upperCanvasEl.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        const rect = canvas.findTarget(e, true);
+        if (!rect || rect.type !== 'rect') return;
+
+        if (mode === 'select') {
+            const bbox = canvas.upperCanvasEl.getBoundingClientRect();
+            showLabelPicker(e.clientX - bbox.left, e.clientY - bbox.top, rect);
+        }
+        e.preventDefault();
+    });
+
+    // Ensure initial tool state is correctly applied to default (Move) mode.
     setMode('move');
+
+    // Zoom in/out with Ctrl + Mouse wheel, centred on cursor
+    canvas.on('mouse:wheel', opt => {
+        if (!opt.e.ctrlKey) {
+            return; // let normal scroll behaviour happen
+        }
+        let delta = opt.e.deltaY;
+        let zoom = canvas.getZoom();
+        // Using exponential factor for smooth zooming
+        zoom *= Math.pow(0.999, delta);
+        if (zoom > MAX_ZOOM) {zoom = MAX_ZOOM;}
+        if (zoom < MIN_ZOOM) {zoom = MIN_ZOOM;}
+
+        const ptr = canvas.getPointer(opt.e);
+        canvas.zoomToPoint(new fabric.Point(ptr.x, ptr.y), zoom);
+        canvas.forEachObject(obj => obj.setCoords());
+        opt.e.preventDefault();
+        opt.e.stopPropagation();
+    });
 })();
