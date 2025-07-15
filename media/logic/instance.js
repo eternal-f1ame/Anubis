@@ -52,6 +52,59 @@
 
     const colorForLabel = name => labelMap[name] || '#ff0000';
     
+    // Helper function to clamp coordinates within image boundaries
+    const clampToImageBounds = (point) => {
+        return {
+            x: Math.max(0, Math.min(imgW, point.x)),
+            y: Math.max(0, Math.min(imgH, point.y))
+        };
+    };
+    
+    // Helper function to calculate polygon bounding rectangle
+    const getPolygonBounds = (polygon) => {
+        if (!polygon || !polygon.points) {
+            return { left: 0, top: 0, width: 0, height: 0 };
+        }
+        
+        // Get the actual points considering polygon's position and transformations
+        const matrix = polygon.calcTransformMatrix();
+        const points = polygon.points.map(point => {
+            const transformed = fabric.util.transformPoint(point, matrix);
+            return transformed;
+        });
+        
+        // Find min/max x and y coordinates
+        let minX = points[0].x;
+        let maxX = points[0].x;
+        let minY = points[0].y;
+        let maxY = points[0].y;
+        
+        for (let i = 1; i < points.length; i++) {
+            minX = Math.min(minX, points[i].x);
+            maxX = Math.max(maxX, points[i].x);
+            minY = Math.min(minY, points[i].y);
+            maxY = Math.max(maxY, points[i].y);
+        }
+        
+        return {
+            left: minX,
+            top: minY,
+            width: maxX - minX,
+            height: maxY - minY
+        };
+    };
+    
+    // Helper function to clamp polygon bounds (simple approach like object detection + bottom/right)
+    const clampPolygon = polygon => {
+        if (!imgW || !imgH || !polygon) {
+            return;
+        }
+        const bounds = getPolygonBounds(polygon);
+        const newLeft = Math.max(0, Math.min(polygon.left, imgW - bounds.width));
+        const newTop = Math.max(0, Math.min(polygon.top, imgH - bounds.height));
+        polygon.set({ left: newLeft, top: newTop });
+    };
+    
     // Undo/Redo system functions
     const saveToHistory = () => {
         const state = {
@@ -274,7 +327,9 @@
     };
 
     const createPolygonFromPoints = (points, label) => {
-        if (points.length < 3) {return null;}
+        if (points.length < 3) {
+            return null;
+        }
         
         const color = colorForLabel(label);
         const polygon = new fabric.Polygon(points, {
@@ -305,12 +360,14 @@
     };
 
     const addPolygonPoint = (point) => {
-        polygonPoints.push(point);
+        // Clamp point to image boundaries
+        const clampedPoint = clampToImageBounds(point);
+        polygonPoints.push(clampedPoint);
         
         // Create visual feedback point
         const circle = new fabric.Circle({
-            left: point.x - 4,
-            top: point.y - 4,
+            left: clampedPoint.x - 4,
+            top: clampedPoint.y - 4,
             radius: 4,
             fill: '#ff4444',
             stroke: '#ffffff',
@@ -360,9 +417,10 @@
         
         if (polygonPoints.length > 0 && currentPoint) {
             const lastPoint = polygonPoints[polygonPoints.length - 1];
+            const clampedCurrentPoint = clampToImageBounds(currentPoint);
             const color = colorForLabel(labelSelect.value);
             
-            previewLine = new fabric.Line([lastPoint.x, lastPoint.y, currentPoint.x, currentPoint.y], {
+            previewLine = new fabric.Line([lastPoint.x, lastPoint.y, clampedCurrentPoint.x, clampedCurrentPoint.y], {
                 stroke: color,
                 strokeWidth: 1,
                 strokeDashArray: [3, 3],
@@ -481,6 +539,21 @@
         deleteBtn.disabled = true;
     });
 
+    // Simple polygon movement constraint (like object detection)
+    canvas.on('object:moving', (e) => {
+        const obj = e.target;
+        if (obj && obj.type === 'polygon' && obj.label) {
+            clampPolygon(obj);
+        }
+    });
+
+    canvas.on('object:scaling', (e) => {
+        const obj = e.target;
+        if (obj && obj.type === 'polygon' && obj.label) {
+            clampPolygon(obj);
+        }
+    });
+
     // Mouse wheel zoom
     canvas.on('mouse:wheel', (opt) => {
         const delta = opt.e.deltaY;
@@ -587,11 +660,14 @@
         if (window.initialAnnotations) {
             window.initialAnnotations.forEach(ann => {
                 if (ann.type === 'polygon' && ann.points) {
-                    // Use direct image coordinates (no scaling needed)
-                    const points = ann.points.map(p => ({
-                        x: p.x * imgW,
-                        y: p.y * imgH
-                    }));
+                    // Use direct image coordinates and clamp to bounds
+                    const points = ann.points.map(p => {
+                        const point = {
+                            x: p.x * imgW,
+                            y: p.y * imgH
+                        };
+                        return clampToImageBounds(point);
+                    });
                     const polygon = createPolygonFromPoints(points, ann.label);
                     if (polygon) {
                         canvas.add(polygon);

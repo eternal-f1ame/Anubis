@@ -9,7 +9,7 @@
     "url": "https://github.com/eternal-f1ame/Anubis.git"
   },
   "engines": {
-    "vscode": "^1.102.0"
+    "vscode": "^1.000.0"
   },
   "categories": [
     "Other"
@@ -81,7 +81,7 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.102.0",
+    "@types/vscode": "^1.000.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
     "@typescript-eslint/eslint-plugin": "^8.31.1",

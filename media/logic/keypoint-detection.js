@@ -326,7 +326,19 @@
         canvas.renderAll();
     };
 
+    // Helper function to clamp coordinates within image boundaries
+    const clampToImageBounds = (x, y) => {
+        const clampedX = Math.max(KEYPOINT_RADIUS, Math.min(imgW - KEYPOINT_RADIUS, x));
+        const clampedY = Math.max(KEYPOINT_RADIUS, Math.min(imgH - KEYPOINT_RADIUS, y));
+        return { x: clampedX, y: clampedY };
+    };
+
     const createKeypoint = (x, y, label) => {
+        // Clamp coordinates to image boundaries
+        const clamped = clampToImageBounds(x, y);
+        x = clamped.x;
+        y = clamped.y;
+        
         const id = Date.now().toString() + '.' + Math.random().toString(36).substr(2, 9);
         const color = colorForLabel(label);
         
@@ -359,10 +371,21 @@
         keypoints.push(keypoint);
         canvas.add(circle);
         
-        // Update position when moved
+        // Update position when moved with boundary constraints
         circle.on('moving', () => {
-            keypoint.x = circle.left + KEYPOINT_RADIUS;
-            keypoint.y = circle.top + KEYPOINT_RADIUS;
+            const newX = circle.left + KEYPOINT_RADIUS;
+            const newY = circle.top + KEYPOINT_RADIUS;
+            const clamped = clampToImageBounds(newX, newY);
+            
+            // Update circle position to clamped coordinates
+            circle.set({
+                left: clamped.x - KEYPOINT_RADIUS,
+                top: clamped.y - KEYPOINT_RADIUS
+            });
+            
+            // Update keypoint data
+            keypoint.x = clamped.x;
+            keypoint.y = clamped.y;
             updateSkeletonLines();
         });
         
@@ -399,7 +422,9 @@
             }
         });
         
-        if (!showSkeleton) return;
+        if (!showSkeleton) {
+            return;
+        }
         
         // Draw new skeleton lines using the same approach as instance detection
         connections.forEach(conn => {
@@ -468,7 +493,9 @@
         if (mode === 'connect' && e.target && e.target.keypointId) {
             const clickedKeypoint = findKeypointById(e.target.keypointId);
             
-            if (!clickedKeypoint) return;
+            if (!clickedKeypoint) {
+                return;
+            }
             
             if (!connectingKeypoint) {
                 // First keypoint selected
@@ -668,10 +695,11 @@
             if (window.initialAnnotations.annotations) {
                 window.initialAnnotations.annotations.forEach(ann => {
                     if (ann.type === 'keypoint') {
-                        // Use direct image coordinates (no scaling needed)
+                        // Use direct image coordinates and clamp to bounds
                         const x = ann.x * imgW;
                         const y = ann.y * imgH;
-                        createKeypoint(x, y, ann.label);
+                        const clamped = clampToImageBounds(x, y);
+                        createKeypoint(clamped.x, clamped.y, ann.label);
                     }
                 });
             }
