@@ -99,10 +99,38 @@
         if (!imgW || !imgH || !polygon) {
             return;
         }
+        
         const bounds = getPolygonBounds(polygon);
-        const newLeft = Math.max(0, Math.min(polygon.left, imgW - bounds.width));
-        const newTop = Math.max(0, Math.min(polygon.top, imgH - bounds.height));
-        polygon.set({ left: newLeft, top: newTop });
+        
+        // Calculate adjustments needed to keep all edges within image bounds
+        let deltaX = 0;
+        let deltaY = 0;
+        
+        // Clamp left edge (move right if needed)
+        if (bounds.left < 0) {
+            deltaX = -bounds.left;
+        }
+        // Clamp right edge (move left if needed)
+        else if (bounds.left + bounds.width > imgW) {
+            deltaX = imgW - (bounds.left + bounds.width);
+        }
+        
+        // Clamp top edge (move down if needed)
+        if (bounds.top < 0) {
+            deltaY = -bounds.top;
+        }
+        // Clamp bottom edge (move up if needed)
+        else if (bounds.top + bounds.height > imgH) {
+            deltaY = imgH - (bounds.top + bounds.height);
+        }
+        
+        // Apply the adjustments to the polygon position
+        if (deltaX !== 0 || deltaY !== 0) {
+            polygon.set({
+                left: polygon.left + deltaX,
+                top: polygon.top + deltaY
+            });
+        }
     };
     
     // Undo/Redo system functions

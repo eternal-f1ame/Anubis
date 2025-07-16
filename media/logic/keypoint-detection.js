@@ -32,10 +32,55 @@
     let connectingKeypoint = null;
     let keypoints = [];
     
-    // Undo/Redo system
-    let undoHistory = [];
-    let redoHistory = [];
-    const MAX_UNDO_STEPS = 5;
+    // === FILE-BASED UNDO/REDO SYSTEM ===
+    const CACHE_DIR = '.cache';
+    const CACHE_PREFIX = 'keypoint-undo-';
+    const CACHE_MAX = 5;
+    let cacheIndex = 0; // 0 = latest, increases as you undo
+    let cacheLength = 1; // how many states are in cache (1 = only latest)
+
+    // Save annotation JSON to .cache/keypoint-undo-0.json, shift older files
+    function saveAnnotationToCache(data) {
+        // Shift older files up (4->5, 3->4, ... 0->1)
+        for (let i = CACHE_MAX - 1; i > 0; i--) {
+            vscode.postMessage({ type: 'moveCacheFile', from: `${CACHE_DIR}/${CACHE_PREFIX}${i-1}.json`, to: `${CACHE_DIR}/${CACHE_PREFIX}${i}.json` });
+        }
+        // Save new state to 0
+        vscode.postMessage({ type: 'writeCacheFile', file: `${CACHE_DIR}/${CACHE_PREFIX}0.json`, data });
+        cacheIndex = 0;
+        cacheLength = Math.min(cacheLength + 1, CACHE_MAX);
+    }
+
+    // Load annotation JSON from .cache/keypoint-undo-X.json
+    function loadAnnotationFromCache(idx) {
+        vscode.postMessage({ type: 'readCacheFile', file: `${CACHE_DIR}/${CACHE_PREFIX}${idx}.json` });
+    }
+
+    // Call this after any annotation change
+    function pushAnnotationState() {
+        const annotations = keypoints.map(kp => ({
+            type: 'keypoint',
+            id: kp.id,
+            label: kp.label,
+            x: kp.x / imgW,
+            y: kp.y / imgH,
+            visibility: kp.visibility
+        }));
+        const data = { annotations, connections };
+        saveAnnotationToCache(data);
+    }
+
+    function undoCache() {
+        if (cacheIndex + 1 >= cacheLength) return;
+        cacheIndex++;
+        loadAnnotationFromCache(cacheIndex);
+    }
+
+    function redoCache() {
+        if (cacheIndex === 0) return;
+        cacheIndex--;
+        loadAnnotationFromCache(cacheIndex);
+    }
 
     labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
 
@@ -49,128 +94,6 @@
 
     const colorForLabel = name => labelMap[name] || '#ff0000';
     
-    // Undo/Redo system functions
-    const saveToHistory = () => {
-        const state = {
-            canvasState: canvas.toJSON(['label', 'keypointId']),
-            keypoints: JSON.parse(JSON.stringify(keypoints)),
-            connections: JSON.parse(JSON.stringify(connections)),
-            labelArray: JSON.parse(JSON.stringify(labelArray)),
-            labelMap: JSON.parse(JSON.stringify(labelMap)),
-            selectedLabel: labelSelect.value
-        };
-        
-        undoHistory.push(state);
-        if (undoHistory.length > MAX_UNDO_STEPS) {
-            undoHistory.shift(); // Remove oldest state
-        }
-        
-        // Clear redo history when new changes are made
-        redoHistory = [];
-    };
-    
-    const undo = () => {
-        if (undoHistory.length === 0) {
-            return;
-        }
-        
-        // Save current state to redo history before undoing
-        const currentState = {
-            canvasState: canvas.toJSON(['label', 'keypointId']),
-            keypoints: JSON.parse(JSON.stringify(keypoints)),
-            connections: JSON.parse(JSON.stringify(connections)),
-            labelArray: JSON.parse(JSON.stringify(labelArray)),
-            labelMap: JSON.parse(JSON.stringify(labelMap)),
-            selectedLabel: labelSelect.value
-        };
-        
-        redoHistory.push(currentState);
-        if (redoHistory.length > MAX_UNDO_STEPS) {
-            redoHistory.shift(); // Remove oldest redo state
-        }
-        
-        const previousState = undoHistory.pop();
-        
-        // Restore canvas
-        canvas.loadFromJSON(previousState.canvasState, () => {
-            canvas.renderAll();
-            
-            // Restore keypoint and connection data
-            keypoints = previousState.keypoints;
-            connections = previousState.connections;
-            
-            // Restore labels
-            labelArray = previousState.labelArray;
-            labelMap = previousState.labelMap;
-            
-            // Rebuild label select
-            labelSelect.innerHTML = labelArray.map(l => 
-                `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`
-            ).join('');
-            
-            // Restore selected label
-            if (previousState.selectedLabel && labelSelect.querySelector(`option[value="${previousState.selectedLabel}"]`)) {
-                labelSelect.value = previousState.selectedLabel;
-            }
-            
-            // Update skeleton display
-            updateSkeletonLines();
-            updateCounts();
-            saveState();
-        });
-    };
-    
-    const redo = () => {
-        if (redoHistory.length === 0) {
-            return;
-        }
-        
-        // Save current state to undo history before redoing
-        const currentState = {
-            canvasState: canvas.toJSON(['label', 'keypointId']),
-            keypoints: JSON.parse(JSON.stringify(keypoints)),
-            connections: JSON.parse(JSON.stringify(connections)),
-            labelArray: JSON.parse(JSON.stringify(labelArray)),
-            labelMap: JSON.parse(JSON.stringify(labelMap)),
-            selectedLabel: labelSelect.value
-        };
-        
-        undoHistory.push(currentState);
-        if (undoHistory.length > MAX_UNDO_STEPS) {
-            undoHistory.shift(); // Remove oldest undo state
-        }
-        
-        const nextState = redoHistory.pop();
-        
-        // Restore canvas
-        canvas.loadFromJSON(nextState.canvasState, () => {
-            canvas.renderAll();
-            
-            // Restore keypoint and connection data
-            keypoints = nextState.keypoints;
-            connections = nextState.connections;
-            
-            // Restore labels
-            labelArray = nextState.labelArray;
-            labelMap = nextState.labelMap;
-            
-            // Rebuild label select
-            labelSelect.innerHTML = labelArray.map(l => 
-                `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`
-            ).join('');
-            
-            // Restore selected label
-            if (nextState.selectedLabel && labelSelect.querySelector(`option[value="${nextState.selectedLabel}"]`)) {
-                labelSelect.value = nextState.selectedLabel;
-            }
-            
-            // Update skeleton display
-            updateSkeletonLines();
-            updateCounts();
-            saveState();
-        });
-    };
-
     const showFeedback = (message, type = 'info') => {
         const existing = document.querySelector('.feedback-message');
         if (existing) {existing.remove();}
@@ -263,7 +186,9 @@
                     ${connections.map((conn, index) => {
                         const from = keypoints.find(kp => kp.id === conn.from);
                         const to = keypoints.find(kp => kp.id === conn.to);
-                        if (!from || !to) return '';
+                        if (!from || !to) {
+                            return '';
+                        }
                         return `<div class="connection-item">
                             <span>${from.label} → ${to.label}</span>
                             <button class="remove-connection" onclick="removeConnection(${index})">×</button>
@@ -293,6 +218,18 @@
         if (newMode !== 'connect') {
             resetConnectingState();
         }
+        
+        // Set movability of keypoints based on mode
+        keypoints.forEach(kp => {
+            if (kp.fabricObj) {
+                kp.fabricObj.set({
+                    selectable: newMode === 'select' || newMode === 'connect', // Only selectable in select and connect modes
+                    evented: newMode !== 'move', // Not evented in move mode
+                    lockMovementX: newMode === 'connect', // Lock movement in connect mode
+                    lockMovementY: newMode === 'connect' // Lock movement in connect mode
+                });
+            }
+        });
         
         // Update cursor for keypoint mode
         if (newMode === 'keypoint') {
@@ -349,13 +286,15 @@
             fill: color,
             stroke: color,
             strokeWidth: 2,
-            selectable: true,
-            evented: true,
+            selectable: mode === 'select' || mode === 'connect', // Only selectable in select and connect modes
+            evented: mode !== 'move', // Not evented in move mode
             hasControls: false,
             hasBorders: false,
             lockScalingX: true,
             lockScalingY: true,
-            lockRotation: true
+            lockRotation: true,
+            lockMovementX: mode === 'connect', // Lock movement in connect mode
+            lockMovementY: mode === 'connect' // Lock movement in connect mode
         });
         
         const keypoint = {
@@ -386,7 +325,7 @@
             // Update keypoint data
             keypoint.x = clamped.x;
             keypoint.y = clamped.y;
-            updateSkeletonLines();
+            // Don't update skeleton lines here - they will update when selection is cleared
         });
         
         return keypoint;
@@ -394,6 +333,16 @@
 
     const findKeypointById = (id) => {
         return keypoints.find(kp => kp.id === id);
+    };
+
+    // Helper function to synchronize keypoint data with fabric object positions
+    const synchronizeKeypointPositions = () => {
+        keypoints.forEach(kp => {
+            if (kp.fabricObj) {
+                kp.x = kp.fabricObj.left + KEYPOINT_RADIUS;
+                kp.y = kp.fabricObj.top + KEYPOINT_RADIUS;
+            }
+        });
     };
 
     const createConnection = (fromKeypoint, toKeypoint) => {
@@ -415,6 +364,9 @@
     };
 
     const updateSkeletonLines = () => {
+        // Synchronize keypoint data with fabric object positions
+        synchronizeKeypointPositions();
+        
         // Remove existing skeleton lines
         canvas.getObjects().forEach(obj => {
             if (obj.isSkeletonLine) {
@@ -445,6 +397,16 @@
             }
         });
         
+        canvas.renderAll();
+    };
+
+    const hideSkeletonLines = () => {
+        // Remove existing skeleton lines without redrawing them
+        canvas.getObjects().forEach(obj => {
+            if (obj.isSkeletonLine) {
+                canvas.remove(obj);
+            }
+        });
         canvas.renderAll();
     };
 
@@ -485,7 +447,7 @@
             createKeypoint(pointer.x, pointer.y, label);
             updateCounts();
             saveAnnotations(); // Auto-save when keypoint is added
-            saveToHistory(); // Save to undo history after auto-save
+            pushAnnotationState(); // Save to undo history after auto-save
             saveState();
             return;
         }
@@ -513,7 +475,7 @@
                     createConnection(connectingKeypoint, clickedKeypoint);
                     updateCounts();
                     saveAnnotations(); // Auto-save when connection is created
-                    saveToHistory(); // Save to undo history after auto-save
+                    pushAnnotationState(); // Save to undo history after auto-save
                     saveState();
                 }
                 resetConnectingState();
@@ -548,22 +510,66 @@
 
     canvas.on('selection:created', (e) => {
         deleteBtn.disabled = false;
+        // Hide skeleton lines when any selection is made, except in connect mode
+        if (mode !== 'connect') {
+            hideSkeletonLines();
+        }
     });
 
     canvas.on('selection:updated', (e) => {
         deleteBtn.disabled = false;
+        // Hide skeleton lines when selection is updated, except in connect mode
+        if (mode !== 'connect') {
+            hideSkeletonLines();
+        }
     });
 
     canvas.on('selection:cleared', (e) => {
         deleteBtn.disabled = true;
+        // Show skeleton lines when selection is cleared, except in connect mode (they should already be visible)
+        if (mode !== 'connect') {
+            updateSkeletonLines();
+        }
+        // Ensure annotations are saved after any selection changes
+        // This catches cases where keypoints were moved and then deselected
+        saveAnnotations();
     });
 
     canvas.on('object:moved', (e) => {
+        // Handle both individual keypoint movement and group movement
         if (e.target.keypointId) {
-            updateSkeletonLines();
+            // Single keypoint moved
             saveAnnotations(); // Auto-save when keypoint is moved
             saveState();
+        } else if (e.target.type === 'activeSelection') {
+            // Group of objects moved - check if any are keypoints
+            const keypointObjects = e.target.getObjects().filter(obj => obj.keypointId);
+            if (keypointObjects.length > 0) {
+                // Update keypoint data to match final fabric object positions
+                // Do NOT apply individual clamping here as it causes convergence
+                keypointObjects.forEach(circle => {
+                    const keypoint = keypoints.find(kp => kp.id === circle.keypointId);
+                    if (keypoint) {
+                        keypoint.x = circle.left + KEYPOINT_RADIUS;
+                        keypoint.y = circle.top + KEYPOINT_RADIUS;
+                    }
+                });
+                
+                saveAnnotations(); // Auto-save when keypoints are moved
+                saveState();
+            }
         }
+    });
+
+    // Handle boundary clamping during movement
+    canvas.on('object:moving', (e) => {
+        // Only handle individual keypoint movement here
+        // Group movements should not have individual clamping as it causes convergence
+        if (e.target.keypointId) {
+            // Single keypoint being moved - boundary clamping is handled in createKeypoint
+            // No additional action needed here
+        }
+        // Note: Group movements are intentionally not handled here to prevent keypoint convergence
     });
 
     // Mouse wheel zoom
@@ -598,13 +604,12 @@
         // Ctrl+Z for undo
         if (e.ctrlKey && e.key === 'z') {
             e.preventDefault();
-            undo();
+            undoCache();
         }
-        
         // Ctrl+Y for redo
         if (e.ctrlKey && e.key === 'y') {
             e.preventDefault();
-            redo();
+            redoCache();
         }
     });
 
@@ -638,7 +643,7 @@
             updateSkeletonLines();
             updateCounts();
             saveAnnotations(); // Auto-save when keypoints are deleted
-            saveToHistory(); // Save to undo history after auto-save
+            pushAnnotationState(); // Save to undo history after auto-save
             saveState();
             showFeedback(`Deleted ${activeObjects.length} keypoint(s)`);
         }
@@ -657,7 +662,7 @@
         updateSkeletonLines();
         updateCounts();
         saveAnnotations(); // Auto-save when all connections are cleared
-        saveToHistory(); // Save to undo history after auto-save
+        pushAnnotationState(); // Save to undo history after auto-save
         saveState();
         showFeedback('All connections cleared');
     });
@@ -699,7 +704,19 @@
                         const x = ann.x * imgW;
                         const y = ann.y * imgH;
                         const clamped = clampToImageBounds(x, y);
-                        createKeypoint(clamped.x, clamped.y, ann.label);
+                        const keypoint = createKeypoint(clamped.x, clamped.y, ann.label);
+                        
+                        // Preserve the original ID from saved annotations
+                        if (keypoint && ann.id) {
+                            keypoint.id = ann.id;
+                            keypoint.fabricObj.keypointId = ann.id;
+                        }
+                        
+                        // Ensure keypoint data coordinates match fabric object position
+                        if (keypoint && keypoint.fabricObj) {
+                            keypoint.x = keypoint.fabricObj.left + KEYPOINT_RADIUS;
+                            keypoint.y = keypoint.fabricObj.top + KEYPOINT_RADIUS;
+                        }
                     }
                 });
             }
@@ -709,20 +726,87 @@
             }
         }
         
+        // Synchronize keypoint positions and update skeleton lines after loading
+        synchronizeKeypointPositions();
         updateSkeletonLines();
+        // Update keypoint properties based on current mode
+        keypoints.forEach(kp => {
+            if (kp.fabricObj) {
+                kp.fabricObj.set({
+                    selectable: mode === 'select' || mode === 'connect', // Only selectable in select and connect modes
+                    evented: mode !== 'move', // Not evented in move mode
+                    lockMovementX: mode === 'connect', // Lock movement in connect mode
+                    lockMovementY: mode === 'connect' // Lock movement in connect mode
+                });
+            }
+        });
         // Restore state after canvas is fully loaded
         setTimeout(restoreState, 200);
         updateCounts();
         canvas.requestRenderAll();
         
         // Save initial state for undo
-        setTimeout(() => saveToHistory(), 300);
+        setTimeout(() => pushAnnotationState(), 300);
     });
 
     // Message handler for VS Code communication
     window.addEventListener('message', (event) => {
         const message = event.data;
         switch (message.type) {
+            case 'loadAnnotations':
+                if (message.annotations) {
+                    // Clear existing keypoints and connections
+                    keypoints.forEach(kp => canvas.remove(kp.fabricObj));
+                    keypoints = [];
+                    connections = [];
+                    
+                    // Load keypoints
+                    if (message.annotations.annotations) {
+                        message.annotations.annotations.forEach(ann => {
+                            if (ann.type === 'keypoint') {
+                                const x = ann.x * imgW;
+                                const y = ann.y * imgH;
+                                const clamped = clampToImageBounds(x, y);
+                                const keypoint = createKeypoint(clamped.x, clamped.y, ann.label);
+                                
+                                // Preserve the original ID from saved annotations
+                                if (keypoint && ann.id) {
+                                    keypoint.id = ann.id;
+                                    keypoint.fabricObj.keypointId = ann.id;
+                                }
+                                
+                                // Ensure keypoint data coordinates match fabric object position
+                                if (keypoint && keypoint.fabricObj) {
+                                    keypoint.x = keypoint.fabricObj.left + KEYPOINT_RADIUS;
+                                    keypoint.y = keypoint.fabricObj.top + KEYPOINT_RADIUS;
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Load connections
+                    if (message.annotations.connections) {
+                        connections = message.annotations.connections;
+                    }
+                    
+                    // Synchronize keypoint positions and update skeleton lines
+                    synchronizeKeypointPositions();
+                    updateSkeletonLines();
+                    // Update keypoint properties based on current mode
+                    keypoints.forEach(kp => {
+                        if (kp.fabricObj) {
+                            kp.fabricObj.set({
+                                selectable: mode === 'select' || mode === 'connect', // Only selectable in select and connect modes
+                                evented: mode !== 'move', // Not evented in move mode
+                                lockMovementX: mode === 'connect', // Lock movement in connect mode
+                                lockMovementY: mode === 'connect' // Lock movement in connect mode
+                            });
+                        }
+                    });
+                    updateCounts();
+                    canvas.renderAll();
+                }
+                break;
             case 'labelAdded':
                 const newLabel = message.label;
                 // If this is the first real label, remove the default 'Object' label
@@ -735,7 +819,7 @@
                 labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
                 labelSelect.value = newLabel.name;
                 updateCounts();
-                saveToHistory(); // Save to undo history after label added
+                pushAnnotationState(); // Save to undo history after label added
                 break;
             case 'labelRenamed':
                 const oldName = message.oldName;
@@ -760,7 +844,7 @@
                 
                 updateCounts();
                 canvas.renderAll();
-                saveToHistory(); // Save to undo history after label renamed
+                pushAnnotationState(); // Save to undo history after label renamed
                 break;
             case 'labelDeleted':
                 const deletedName = message.name;
@@ -787,7 +871,7 @@
                 updateSkeletonLines();
                 updateCounts();
                 canvas.renderAll();
-                saveToHistory(); // Save to undo history after label deleted
+                pushAnnotationState(); // Save to undo history after label deleted
                 break;
         }
     });
@@ -795,4 +879,4 @@
     // Initialize
     restoreState();
     updateCounts();
-})(); 
+})();
