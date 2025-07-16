@@ -33,31 +33,17 @@
     let keypoints = [];
     
     // === FILE-BASED UNDO/REDO SYSTEM ===
-    const CACHE_DIR = '.cache';
-    const CACHE_PREFIX = 'keypoint-undo-';
-    const CACHE_MAX = 5;
-    let cacheIndex = 0; // 0 = latest, increases as you undo
-    let cacheLength = 1; // how many states are in cache (1 = only latest)
-
-    // Save annotation JSON to .cache/keypoint-undo-0.json, shift older files
-    function saveAnnotationToCache(data) {
-        // Shift older files up (4->5, 3->4, ... 0->1)
-        for (let i = CACHE_MAX - 1; i > 0; i--) {
-            vscode.postMessage({ type: 'moveCacheFile', from: `${CACHE_DIR}/${CACHE_PREFIX}${i-1}.json`, to: `${CACHE_DIR}/${CACHE_PREFIX}${i}.json` });
-        }
-        // Save new state to 0
-        vscode.postMessage({ type: 'writeCacheFile', file: `${CACHE_DIR}/${CACHE_PREFIX}0.json`, data });
-        cacheIndex = 0;
-        cacheLength = Math.min(cacheLength + 1, CACHE_MAX);
-    }
-
-    // Load annotation JSON from .cache/keypoint-undo-X.json
-    function loadAnnotationFromCache(idx) {
-        vscode.postMessage({ type: 'readCacheFile', file: `${CACHE_DIR}/${CACHE_PREFIX}${idx}.json` });
-    }
+    let history = [];
+    let historyIndex = -1;
+    const MAX_HISTORY = 5;
+    let nextSnapshotIndex = 0;
 
     // Call this after any annotation change
     function pushAnnotationState() {
+        // 1. Truncate redo stack if we have undone and then made a new change
+        history = history.slice(0, historyIndex + 1);
+
+        // 2. Get current state
         const annotations = keypoints.map(kp => ({
             type: 'keypoint',
             id: kp.id,
@@ -66,20 +52,44 @@
             y: kp.y / imgH,
             visibility: kp.visibility
         }));
-        const data = { annotations, connections };
-        saveAnnotationToCache(data);
+        const currentState = { annotations, connections };
+
+        // 3. Determine filename (using a circular index for files)
+        const newSnapshotFile = `snapshot_${nextSnapshotIndex}.json`;
+        nextSnapshotIndex = (nextSnapshotIndex + 1) % MAX_HISTORY;
+
+        // 4. Write file via backend
+        vscode.postMessage({ type: 'writeCacheFile', file: newSnapshotFile, data: currentState });
+
+        // 5. Add to history array (which tracks filenames)
+        history.push(newSnapshotFile);
+        historyIndex++;
+
+        // 6. Prune history array if it's too long
+        if (history.length > MAX_HISTORY) {
+            history.shift(); // remove oldest file from history tracking
+            historyIndex--; // adjust index since we shifted
+        }
     }
 
-    function undoCache() {
-        if (cacheIndex + 1 >= cacheLength) return;
-        cacheIndex++;
-        loadAnnotationFromCache(cacheIndex);
+    function undo() {
+        if (historyIndex > 0) {
+            historyIndex--;
+            const fileToLoad = history[historyIndex];
+            vscode.postMessage({ type: 'readCacheFile', file: fileToLoad });
+        } else {
+            showFeedback('Nothing to undo', 'info');
+        }
     }
 
-    function redoCache() {
-        if (cacheIndex === 0) return;
-        cacheIndex--;
-        loadAnnotationFromCache(cacheIndex);
+    function redo() {
+        if (historyIndex < history.length - 1) {
+            historyIndex++;
+            const fileToLoad = history[historyIndex];
+            vscode.postMessage({ type: 'readCacheFile', file: fileToLoad });
+        } else {
+            showFeedback('Nothing to redo', 'info');
+        }
     }
 
     labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
@@ -333,6 +343,67 @@
 
     const findKeypointById = (id) => {
         return keypoints.find(kp => kp.id === id);
+    };
+
+    const loadStateFromData = (data) => {
+        if (!data) {
+            console.warn('loadStateFromData called with null data');
+            return;
+        }
+
+        // Clear existing keypoints and connections
+        canvas.getObjects().forEach(obj => {
+            if (obj.keypointId || obj.isSkeletonLine) {
+                canvas.remove(obj);
+            }
+        });
+        keypoints = [];
+        connections = [];
+        
+        // Load keypoints
+        if (data.annotations && Array.isArray(data.annotations)) {
+            data.annotations.forEach(ann => {
+                if (ann.type === 'keypoint') {
+                    const x = ann.x * imgW;
+                    const y = ann.y * imgH;
+                    // createKeypoint already clamps
+                    const keypoint = createKeypoint(x, y, ann.label);
+                    
+                    // Preserve the original ID from saved annotations
+                    if (keypoint && ann.id) {
+                        const existingKp = findKeypointById(ann.id);
+                        if (existingKp && existingKp !== keypoint) {
+                            console.warn(`Duplicate keypoint ID ${ann.id} found. Assigning new ID.`);
+                        } else {
+                            keypoint.id = ann.id;
+                            keypoint.fabricObj.keypointId = ann.id;
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Load connections
+        if (data.connections && Array.isArray(data.connections)) {
+            connections = data.connections;
+        }
+        
+        // Synchronize keypoint positions and update skeleton lines
+        synchronizeKeypointPositions();
+        updateSkeletonLines();
+        // Update keypoint properties based on current mode
+        keypoints.forEach(kp => {
+            if (kp.fabricObj) {
+                kp.fabricObj.set({
+                    selectable: mode === 'select' || mode === 'connect',
+                    evented: mode !== 'move',
+                    lockMovementX: mode === 'connect',
+                    lockMovementY: mode === 'connect'
+                });
+            }
+        });
+        updateCounts();
+        canvas.renderAll();
     };
 
     // Helper function to synchronize keypoint data with fabric object positions
@@ -604,12 +675,12 @@
         // Ctrl+Z for undo
         if (e.ctrlKey && e.key === 'z') {
             e.preventDefault();
-            undoCache();
+            undo();
         }
         // Ctrl+Y for redo
         if (e.ctrlKey && e.key === 'y') {
             e.preventDefault();
-            redoCache();
+            redo();
         }
     });
 
@@ -697,49 +768,20 @@
 
         // Load existing annotations
         if (window.initialAnnotations) {
-            if (window.initialAnnotations.annotations) {
-                window.initialAnnotations.annotations.forEach(ann => {
-                    if (ann.type === 'keypoint') {
-                        // Use direct image coordinates and clamp to bounds
-                        const x = ann.x * imgW;
-                        const y = ann.y * imgH;
-                        const clamped = clampToImageBounds(x, y);
-                        const keypoint = createKeypoint(clamped.x, clamped.y, ann.label);
-                        
-                        // Preserve the original ID from saved annotations
-                        if (keypoint && ann.id) {
-                            keypoint.id = ann.id;
-                            keypoint.fabricObj.keypointId = ann.id;
-                        }
-                        
-                        // Ensure keypoint data coordinates match fabric object position
-                        if (keypoint && keypoint.fabricObj) {
-                            keypoint.x = keypoint.fabricObj.left + KEYPOINT_RADIUS;
-                            keypoint.y = keypoint.fabricObj.top + KEYPOINT_RADIUS;
-                        }
-                    }
-                });
+            let dataToLoad;
+            // New format has metadata and top-level annotations/connections
+            if (window.initialAnnotations.metadata) { 
+                dataToLoad = window.initialAnnotations;
+            } 
+            // Legacy format has a nested annotations object
+            else if (window.initialAnnotations.annotations) { 
+                dataToLoad = window.initialAnnotations.annotations;
             }
-            
-            if (window.initialAnnotations.connections) {
-                connections = window.initialAnnotations.connections;
+            if (dataToLoad) {
+                loadStateFromData(dataToLoad);
             }
         }
         
-        // Synchronize keypoint positions and update skeleton lines after loading
-        synchronizeKeypointPositions();
-        updateSkeletonLines();
-        // Update keypoint properties based on current mode
-        keypoints.forEach(kp => {
-            if (kp.fabricObj) {
-                kp.fabricObj.set({
-                    selectable: mode === 'select' || mode === 'connect', // Only selectable in select and connect modes
-                    evented: mode !== 'move', // Not evented in move mode
-                    lockMovementX: mode === 'connect', // Lock movement in connect mode
-                    lockMovementY: mode === 'connect' // Lock movement in connect mode
-                });
-            }
-        });
         // Restore state after canvas is fully loaded
         setTimeout(restoreState, 200);
         updateCounts();
@@ -753,58 +795,19 @@
     window.addEventListener('message', (event) => {
         const message = event.data;
         switch (message.type) {
+            case 'cacheFileData':
+                if (message.data) {
+                    loadStateFromData(message.data);
+                    showFeedback('State restored');
+                } else {
+                    if (message.error) {
+                        showFeedback('No more states to load', 'error');
+                    }
+                }
+                break;
             case 'loadAnnotations':
                 if (message.annotations) {
-                    // Clear existing keypoints and connections
-                    keypoints.forEach(kp => canvas.remove(kp.fabricObj));
-                    keypoints = [];
-                    connections = [];
-                    
-                    // Load keypoints
-                    if (message.annotations.annotations) {
-                        message.annotations.annotations.forEach(ann => {
-                            if (ann.type === 'keypoint') {
-                                const x = ann.x * imgW;
-                                const y = ann.y * imgH;
-                                const clamped = clampToImageBounds(x, y);
-                                const keypoint = createKeypoint(clamped.x, clamped.y, ann.label);
-                                
-                                // Preserve the original ID from saved annotations
-                                if (keypoint && ann.id) {
-                                    keypoint.id = ann.id;
-                                    keypoint.fabricObj.keypointId = ann.id;
-                                }
-                                
-                                // Ensure keypoint data coordinates match fabric object position
-                                if (keypoint && keypoint.fabricObj) {
-                                    keypoint.x = keypoint.fabricObj.left + KEYPOINT_RADIUS;
-                                    keypoint.y = keypoint.fabricObj.top + KEYPOINT_RADIUS;
-                                }
-                            }
-                        });
-                    }
-                    
-                    // Load connections
-                    if (message.annotations.connections) {
-                        connections = message.annotations.connections;
-                    }
-                    
-                    // Synchronize keypoint positions and update skeleton lines
-                    synchronizeKeypointPositions();
-                    updateSkeletonLines();
-                    // Update keypoint properties based on current mode
-                    keypoints.forEach(kp => {
-                        if (kp.fabricObj) {
-                            kp.fabricObj.set({
-                                selectable: mode === 'select' || mode === 'connect', // Only selectable in select and connect modes
-                                evented: mode !== 'move', // Not evented in move mode
-                                lockMovementX: mode === 'connect', // Lock movement in connect mode
-                                lockMovementY: mode === 'connect' // Lock movement in connect mode
-                            });
-                        }
-                    });
-                    updateCounts();
-                    canvas.renderAll();
+                    loadStateFromData(message.annotations);
                 }
                 break;
             case 'labelAdded':
