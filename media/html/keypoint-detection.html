@@ -4,54 +4,34 @@
     <meta charset="UTF-8">
     <meta http-equiv="Content-Security-Policy" content="${csp}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Keypoint Detection</title>
+    <title>Annotate</title>
     <link rel="stylesheet" href="${webviewStylesheet}">
 </head>
 <body>
     <div id="toolbar">
-        <div class="toolbar-section">
-            <div class="mode-buttons">
-                <button id="keypointModeBtn" class="mode-btn">Add Keypoint</button>
-                <button id="selectModeBtn" class="mode-btn">Select</button>
-                <button id="moveModeBtn" class="mode-btn">Move</button>
-                <button id="connectModeBtn" class="mode-btn">Connect</button>
-            </div>
+        <div class="mode-column">
+            <button id="keypointModeBtn">Keypoint</button>
+            <button id="selectModeBtn">Select</button>
+            <button id="moveModeBtn">Move</button>
+            <button id="connectModeBtn">Connect</button>
         </div>
-        
-        <div class="toolbar-section">
-            <label class="label-selector">Label:
-                <select id="labelSelect"></select>
-            </label>
-        </div>
-        
-        <div class="toolbar-section">
-            <button id="toggleSkeletonBtn" class="action-btn active">Show Skeleton</button>
-            <button id="clearConnectionsBtn" class="action-btn">Clear Connections</button>
-        </div>
-        
-        <div class="toolbar-section">
-            <button id="deleteBtn" class="action-btn" disabled>Delete</button>
-            <button id="saveBtn" class="action-btn">Save</button>
-        </div>
-        
-        <div class="toolbar-section">
-            <button id="addClassBtn" class="action-btn">Add Class</button>
-            <button id="renameBtn" class="action-btn">Rename Class</button>
-            <button id="delClassBtn" class="action-btn">Delete Class</button>
-        </div>
+        <button id="toggleSkeletonBtn">Show Skeleton</button>
+        <button id="clearConnectionsBtn">Clear Connections</button>
+        <label>Label:
+            <select id="labelSelect"></select>
+        </label>
+        <button id="addClassBtn">Add Class</button>
+        <button id="deleteBtn" disabled>Delete</button>
+        <button id="renameBtn">Rename Class</button>
+        <button id="delClassBtn">Delete Class</button>
+        <button id="saveBtn">Save</button>
     </div>
-    
-    <div class="main-content">
-        <div id="sidebar">
-            <h3>Keypoints</h3>
-            <div class="sidebar-content"></div>
-        </div>
-        <div id="canvasWrap">
-            <canvas id="c"></canvas>
-        </div>
+    <div style="flex:1;display:flex;overflow:hidden;">
+        <div id="sidebar" style="width:160px;background:#1b1b1b;color:#fff;font-family:sans-serif;padding:4px;overflow-y:auto;"></div>
+        <div id="canvasWrap" style="flex:1;display:flex;justify-content:center;align-items:center;"><canvas id="c"></canvas></div>
     </div>
 
     <script nonce="${nonce}" src="${fabricCdn}"></script>
     <script nonce="${nonce}" src="${webviewScript}"></script>
 </body>
-</html> 
+</html>
