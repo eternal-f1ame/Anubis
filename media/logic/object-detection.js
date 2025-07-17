@@ -295,6 +295,8 @@
     canvas.on('mouse:down', opt => {
         if (mode === 'select') {
             if (opt.target && opt.target.type === 'rect') {
+                // Save state before starting to move an object
+                saveToHistory();
                 opt.target._startLeft = opt.target.left;
                 opt.target._startTop = opt.target.top;
                 wrap.style.cursor = 'move';
@@ -304,6 +306,10 @@
         }
 
         if (mode !== 'draw' || opt.e.button !== 0) {return;}
+        
+        // Save state before starting to draw a new rectangle
+        saveToHistory();
+        
         const ptr = canvas.getPointer(opt.e);
         drawing = true;
         startX = ptr.x;
@@ -343,6 +349,10 @@
         drawing = false;
         if (rect.width < 10 || rect.height < 10) {
             canvas.remove(rect);
+            // Remove the state we saved when starting to draw since the rectangle was deleted
+            if (undoHistory.length > 0) {
+                undoHistory.pop();
+            }
             return;
         }
         rect.setCoords();
@@ -357,7 +367,7 @@
         }
         updateCounts();
         saveAnnotations();
-        saveToHistory(); // Save to undo history after auto-save
+        // Don't save to history here - we already saved before drawing
         canvas.requestRenderAll();
     });
 
@@ -399,17 +409,37 @@
         deleteBtn.disabled = true;
     });
 
-    canvas.on('object:added', updateCounts);
-    canvas.on('object:removed', updateCounts);
-    canvas.on('object:modified', () => {
+    // Add flag to track when we should save to history
+    let shouldSaveToHistory = false;
+
+    canvas.on('object:added', (e) => {
+        updateCounts();
+        // Only save to history if this is not during drawing and not an auto-deleted small rect
+        if (!drawing && shouldSaveToHistory) {
+            saveToHistory();
+            shouldSaveToHistory = false;
+        }
+    });
+    
+    canvas.on('object:removed', (e) => {
+        updateCounts();
+        // Only save to history if this is a deliberate deletion (not auto-deletion of small rects)
+        if (!drawing && shouldSaveToHistory) {
+            saveToHistory();
+            shouldSaveToHistory = false;
+        }
+    });
+    
+    canvas.on('object:modified', (e) => {
         updateCounts();
         saveAnnotations();
-        saveToHistory(); // Save to undo history after auto-save
+        // Don't save to history here - we already saved before modification started
     });
 
-    canvas.on('selection:created', saveState);
-    canvas.on('selection:updated', saveState);
-    canvas.on('selection:cleared', saveState);
+    // Remove these problematic event handlers that save state unnecessarily
+    // canvas.on('selection:created', saveState);
+    // canvas.on('selection:updated', saveState);
+    // canvas.on('selection:cleared', saveState);
 
     canvas.on('mouse:wheel', opt => {
         if (!opt.e.ctrlKey) {return;}
@@ -425,6 +455,10 @@
 
     // UI event handlers
     labelSelect.addEventListener('change', () => {
+        if (canvas.getActiveObjects().length > 0) {
+            // Save state before changing label
+            saveToHistory();
+        }
         canvas.getActiveObjects().forEach(o => {
             o.label = labelSelect.value;
             const col = colorForLabel(labelSelect.value);
@@ -436,11 +470,13 @@
     });
 
     deleteBtn.addEventListener('click', () => {
+        // Save state before deletion
+        saveToHistory();
+        shouldSaveToHistory = true; // Flag that this deletion should be saved to history
         canvas.getActiveObjects().forEach(o => canvas.remove(o));
         canvas.discardActiveObject();
         canvas.requestRenderAll();
         deleteBtn.disabled = true;
-        saveToHistory(); // Save to undo history after deletion
     });
 
     saveBtn.addEventListener('click', saveAnnotations);
@@ -504,7 +540,7 @@
             labelSelect.value = label.name;
             labelMap[label.name] = label.color;
             labelArray.push(label);
-            saveToHistory(); // Save to undo history after label added
+            // Don't save to history for label operations - these don't affect annotations
         } else if (msg.type === 'labelRenamed') {
             [...labelSelect.options].forEach(o => {
                 if (o.value === msg.oldName) {
@@ -521,24 +557,33 @@
             delete labelMap[msg.oldName];
             labelMap[msg.newName] = oldColor;
             labelArray.forEach(l => {
-                if (l.name === msg.oldName){ l.name = msg.newName;}
+                if (l.name === msg.newName) {
+                    l.color = oldColor;
+                }
             });
-            updateCounts();
             saveToHistory(); // Save to undo history after label renamed
         } else if (msg.type === 'labelDeleted') {
+            const { name } = msg;
             [...labelSelect.options].forEach(o => {
-                if (o.value === msg.name) {o.remove();}
+                if (o.value === name) {
+                    o.remove();
+                }
             });
-            canvas.getObjects('rect').filter(r => r.label === msg.name).forEach(r => canvas.remove(r));
-            delete labelMap[msg.name];
-            labelArray = labelArray.filter(l => l.name !== msg.name);
-            if (labelSelect.value === msg.name && labelSelect.options.length > 0) {
-                labelSelect.value = labelSelect.options[0].value;
+            delete labelMap[name];
+            labelArray = labelArray.filter(l => l.name !== name);
+            // Restore default 'Object' label if no other labels remain
+            if (labelArray.length === 0 || labelArray.every(l => l.name === 'Object')) {
+                const defaultLabel = { name: 'Object', color: '#ff0000' };
+                labelArray = [defaultLabel];
+                labelMap = { Object: '#ff0000' };
+                const opt = document.createElement('option');
+                opt.value = defaultLabel.name;
+                opt.textContent = defaultLabel.name;
+                opt.style.background = defaultLabel.color;
+                labelSelect.appendChild(opt);
+                labelSelect.value = defaultLabel.name;
             }
-            updateCounts();
             saveToHistory(); // Save to undo history after label deleted
         }
     });
-
-    setMode('move');
 })();

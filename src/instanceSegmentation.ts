@@ -21,9 +21,9 @@ function getInstanceWebviewContent(
     annotations?: any[]
 ): string {
     const fabricCdn = 'https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js';
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'logic', 'instance.js'));
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles', 'instance.css'));
-    const htmlPath = vscode.Uri.joinPath(extensionUri, 'media', 'html', 'instance.html');
+    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'logic', 'instance-segmentation.js'));
+    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles', 'instance-segmentation.css'));
+    const htmlPath = vscode.Uri.joinPath(extensionUri, 'media', 'html', 'instance-segmentation.html');
     let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
 
     const cspSource = webview.cspSource;

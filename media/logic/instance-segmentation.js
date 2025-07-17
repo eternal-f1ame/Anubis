@@ -52,87 +52,6 @@
 
     const colorForLabel = name => labelMap[name] || '#ff0000';
     
-    // Helper function to clamp coordinates within image boundaries
-    const clampToImageBounds = (point) => {
-        return {
-            x: Math.max(0, Math.min(imgW, point.x)),
-            y: Math.max(0, Math.min(imgH, point.y))
-        };
-    };
-    
-    // Helper function to calculate polygon bounding rectangle
-    const getPolygonBounds = (polygon) => {
-        if (!polygon || !polygon.points) {
-            return { left: 0, top: 0, width: 0, height: 0 };
-        }
-        
-        // Get the actual points considering polygon's position and transformations
-        const matrix = polygon.calcTransformMatrix();
-        const points = polygon.points.map(point => {
-            const transformed = fabric.util.transformPoint(point, matrix);
-            return transformed;
-        });
-        
-        // Find min/max x and y coordinates
-        let minX = points[0].x;
-        let maxX = points[0].x;
-        let minY = points[0].y;
-        let maxY = points[0].y;
-        
-        for (let i = 1; i < points.length; i++) {
-            minX = Math.min(minX, points[i].x);
-            maxX = Math.max(maxX, points[i].x);
-            minY = Math.min(minY, points[i].y);
-            maxY = Math.max(maxY, points[i].y);
-        }
-        
-        return {
-            left: minX,
-            top: minY,
-            width: maxX - minX,
-            height: maxY - minY
-        };
-    };
-    
-    // Helper function to clamp polygon bounds (simple approach like object detection + bottom/right)
-    const clampPolygon = polygon => {
-        if (!imgW || !imgH || !polygon) {
-            return;
-        }
-        
-        const bounds = getPolygonBounds(polygon);
-        
-        // Calculate adjustments needed to keep all edges within image bounds
-        let deltaX = 0;
-        let deltaY = 0;
-        
-        // Clamp left edge (move right if needed)
-        if (bounds.left < 0) {
-            deltaX = -bounds.left;
-        }
-        // Clamp right edge (move left if needed)
-        else if (bounds.left + bounds.width > imgW) {
-            deltaX = imgW - (bounds.left + bounds.width);
-        }
-        
-        // Clamp top edge (move down if needed)
-        if (bounds.top < 0) {
-            deltaY = -bounds.top;
-        }
-        // Clamp bottom edge (move up if needed)
-        else if (bounds.top + bounds.height > imgH) {
-            deltaY = imgH - (bounds.top + bounds.height);
-        }
-        
-        // Apply the adjustments to the polygon position
-        if (deltaX !== 0 || deltaY !== 0) {
-            polygon.set({
-                left: polygon.left + deltaX,
-                top: polygon.top + deltaY
-            });
-        }
-    };
-    
     // Undo/Redo system functions
     const saveToHistory = () => {
         const state = {
@@ -388,14 +307,12 @@
     };
 
     const addPolygonPoint = (point) => {
-        // Clamp point to image boundaries
-        const clampedPoint = clampToImageBounds(point);
-        polygonPoints.push(clampedPoint);
+        polygonPoints.push(point);
         
         // Create visual feedback point
         const circle = new fabric.Circle({
-            left: clampedPoint.x - 4,
-            top: clampedPoint.y - 4,
+            left: point.x - 4,
+            top: point.y - 4,
             radius: 4,
             fill: '#ff4444',
             stroke: '#ffffff',
@@ -445,10 +362,9 @@
         
         if (polygonPoints.length > 0 && currentPoint) {
             const lastPoint = polygonPoints[polygonPoints.length - 1];
-            const clampedCurrentPoint = clampToImageBounds(currentPoint);
             const color = colorForLabel(labelSelect.value);
             
-            previewLine = new fabric.Line([lastPoint.x, lastPoint.y, clampedCurrentPoint.x, clampedCurrentPoint.y], {
+            previewLine = new fabric.Line([lastPoint.x, lastPoint.y, currentPoint.x, currentPoint.y], {
                 stroke: color,
                 strokeWidth: 1,
                 strokeDashArray: [3, 3],
@@ -466,6 +382,9 @@
             return;
         }
         
+        // Save state before adding polygon
+        saveToHistory();
+        
         const label = labelSelect.value;
         const polygon = createPolygonFromPoints(polygonPoints, label);
         
@@ -473,8 +392,7 @@
             canvas.add(polygon);
             cleanupPolygonDrawing();
             updateCounts();
-            saveAnnotations(); // Auto-save when polygon is added
-            saveToHistory(); // Save to undo history after auto-save
+            saveAnnotations();
             canvas.renderAll();
             showFeedback(`Polygon added with label: ${label}`);
         }
@@ -567,21 +485,6 @@
         deleteBtn.disabled = true;
     });
 
-    // Simple polygon movement constraint (like object detection)
-    canvas.on('object:moving', (e) => {
-        const obj = e.target;
-        if (obj && obj.type === 'polygon' && obj.label) {
-            clampPolygon(obj);
-        }
-    });
-
-    canvas.on('object:scaling', (e) => {
-        const obj = e.target;
-        if (obj && obj.type === 'polygon' && obj.label) {
-            clampPolygon(obj);
-        }
-    });
-
     // Mouse wheel zoom
     canvas.on('mouse:wheel', (opt) => {
         const delta = opt.e.deltaY;
@@ -646,11 +549,13 @@
     deleteBtn.addEventListener('click', () => {
         const activeObjects = canvas.getActiveObjects();
         if (activeObjects.length > 0) {
+            // Save state before deletion
+            saveToHistory();
+            
             activeObjects.forEach(obj => canvas.remove(obj));
             canvas.discardActiveObject();
             updateCounts();
-            saveAnnotations(); // Auto-save when objects are deleted
-            saveToHistory(); // Save to undo history after auto-save
+            saveAnnotations();
             canvas.renderAll();
             showFeedback(`Deleted ${activeObjects.length} object(s)`);
         }
@@ -688,14 +593,10 @@
         if (window.initialAnnotations) {
             window.initialAnnotations.forEach(ann => {
                 if (ann.type === 'polygon' && ann.points) {
-                    // Use direct image coordinates and clamp to bounds
-                    const points = ann.points.map(p => {
-                        const point = {
-                            x: p.x * imgW,
-                            y: p.y * imgH
-                        };
-                        return clampToImageBounds(point);
-                    });
+                    const points = ann.points.map(p => ({
+                        x: p.x * imgW,
+                        y: p.y * imgH
+                    }));
                     const polygon = createPolygonFromPoints(points, ann.label);
                     if (polygon) {
                         canvas.add(polygon);
@@ -729,11 +630,15 @@
                 labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
                 labelSelect.value = newLabel.name;
                 updateCounts();
-                saveToHistory(); // Save to undo history after label added
+                // Don't save to history for label operations
                 break;
             case 'labelRenamed':
                 const oldName = message.oldName;
                 const newName = message.newName;
+                
+                // Save state before renaming (this affects annotations)
+                saveToHistory();
+                
                 labelArray.forEach(l => { if (l.name === oldName) {l.name = newName;} });
                 labelMap[newName] = labelMap[oldName];
                 delete labelMap[oldName];
@@ -749,10 +654,13 @@
                 
                 updateCounts();
                 canvas.renderAll();
-                saveToHistory(); // Save to undo history after label renamed
                 break;
             case 'labelDeleted':
                 const deletedName = message.name;
+                
+                // Save state before deleting (this affects annotations)
+                saveToHistory();
+                
                 labelArray = labelArray.filter(l => l.name !== deletedName);
                 delete labelMap[deletedName];
                 labelSelect.innerHTML = labelArray.map(l => `<option value="${l.name}" style="background:${l.color}">${l.name}</option>`).join('');
@@ -766,7 +674,6 @@
                 
                 updateCounts();
                 canvas.renderAll();
-                saveToHistory(); // Save to undo history after label deleted
                 break;
         }
     });

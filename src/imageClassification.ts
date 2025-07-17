@@ -20,9 +20,9 @@ function getClassificationWebviewContent(
     labels: { name: string; color: string }[],
     classification?: any
 ): string {
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'logic', 'classification.js'));
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles', 'classification.css'));
-    const htmlPath = vscode.Uri.joinPath(extensionUri, 'media', 'html', 'classification.html');
+    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'logic', 'image-classification.js'));
+    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles', 'image-classification.css'));
+    const htmlPath = vscode.Uri.joinPath(extensionUri, 'media', 'html', 'image-classification.html');
     let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
 
     const cspSource = webview.cspSource;
