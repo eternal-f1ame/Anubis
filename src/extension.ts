@@ -1,23 +1,17 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { selectAnnotationType, AnnotationType } from './annotationTypes';
-import { handleObjectDetection, COLOR_PALETTE, readProjectLabels } from './objectDetection';
+import { getWorkspaceRoot, COLOR_PALETTE, readProjectLabels } from './utils';
+import { handleObjectDetection } from './objectDetection';
 import { handleImageClassification } from './imageClassification';
 import { handleInstanceSegmentation } from './instanceSegmentation';
 import { handleKeypointDetection } from './keypointDetection';
 
 const PROJECT_KEY = 'annovis.currentProject';
-
-function getWorkspaceRoot(): vscode.Uri | undefined {
-	const ws = vscode.workspace.workspaceFolders;
-	return ws && ws.length ? ws[0].uri : undefined;
-}
-
 interface ProjectInfo {
 	name: string;
 	type: AnnotationType;
 }
-
 
 async function selectProject(context: vscode.ExtensionContext): Promise<ProjectInfo | undefined> {
 	const root = getWorkspaceRoot();

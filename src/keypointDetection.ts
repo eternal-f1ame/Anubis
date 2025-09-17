@@ -1,57 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { COLOR_PALETTE, readProjectLabels, addLabelToProject, renameLabelInProject, deleteLabelFromProject } from './objectDetection';
-
-function getNonce() {
-	let text = '';
-	const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-	for (let i = 0; i < 32; i++) {
-		text += possible.charAt(Math.floor(Math.random() * possible.length));
-	}
-	return text;
-}
-
-function getKeypointWebviewContent(
-    webview: vscode.Webview,
-    extensionUri: vscode.Uri,
-    imageUrl: string,
-    nonce: string,
-    labels: { name: string; color: string }[],
-    annotations?: any[]
-): string {
-    const fabricCdn = 'https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js';
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'logic', 'keypoint-detection.js'));
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles', 'keypoint-detection.css'));
-    const htmlPath = vscode.Uri.joinPath(extensionUri, 'media', 'html', 'keypoint-detection.html');
-    let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
-
-    const cspSource = webview.cspSource;
-    const csp = `default-src 'none'; img-src ${cspSource} data: https:; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net;`;
-
-    html = html.replace(/\${csp}/g, csp);
-    html = html.replace(/\${nonce}/g, nonce);
-    html = html.replace(/\${fabricCdn}/g, fabricCdn);
-    html = html.replace(/\${webviewScript}/g, scriptUri.toString());
-    html = html.replace(/\${webviewStylesheet}/g, styleUri.toString());
-
-    // Inject data into the webview
-    html = html.replace(
-        '</head>',
-        `<script nonce="${nonce}">
-            window.imageUrl = "${imageUrl}";
-            window.labels = ${JSON.stringify(labels)};
-            window.initialAnnotations = ${JSON.stringify(annotations || null)};
-        </script></head>`
-    );
-
-    return html;
-}
-
-function getWorkspaceRoot(): vscode.Uri | undefined {
-	const ws = vscode.workspace.workspaceFolders;
-	return ws && ws.length ? ws[0].uri : undefined;
-}
+import { getWorkspaceRoot, getNonce, generateWebviewContent, COLOR_PALETTE, readProjectLabels, addLabelToProject, renameLabelInProject, deleteLabelFromProject } from './utils';
 
 export async function handleKeypointDetection(
 	context: vscode.ExtensionContext,
@@ -93,13 +43,14 @@ export async function handleKeypointDetection(
 	const imageUri = panel.webview.asWebviewUri(target);
 	const nonce = getNonce();
 
-	panel.webview.html = getKeypointWebviewContent(
+	panel.webview.html = generateWebviewContent(
 		panel.webview,
 		context.extensionUri,
 		imageUri.toString(),
 		nonce,
 		labels,
-		existingAnnotations
+		existingAnnotations,
+		{ annotationType: 'keypoint-detection', includeFabric: true, dataProperty: 'initialAnnotations' }
 	);
 
     const root = getWorkspaceRoot();
