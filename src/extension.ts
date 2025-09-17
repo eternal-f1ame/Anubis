@@ -18,37 +18,6 @@ interface ProjectInfo {
 	type: AnnotationType;
 }
 
-async function selectProjectType(): Promise<AnnotationType | undefined> {
-	const options = [
-		{
-			label: 'Object Detection',
-			description: 'Project for drawing bounding boxes around objects',
-			id: 'object-detection' as const
-		},
-		{
-			label: 'Image Classification',
-			description: 'Project for classifying entire images with labels',
-			id: 'image-classification' as const
-		},
-		{
-			label: 'Instance Segmentation',
-			description: 'Project for drawing precise outlines around object instances',
-			id: 'instance-segmentation' as const
-		},
-		{
-			label: 'Keypoint Detection',
-			description: 'Project for marking specific points and joints on objects',
-			id: 'keypoint-detection' as const
-		}
-	];
-	
-	const picked = await vscode.window.showQuickPick(options, {
-		placeHolder: 'Select project type',
-		matchOnDescription: true
-	});
-	
-	return picked?.id;
-}
 
 async function selectProject(context: vscode.ExtensionContext): Promise<ProjectInfo | undefined> {
 	const root = getWorkspaceRoot();
@@ -100,8 +69,8 @@ async function selectProject(context: vscode.ExtensionContext): Promise<ProjectI
 			for (const orphanedName of orphanedProjects) {
 				const typeChoice = await vscode.window.showWarningMessage(
 					`What type of project is "${orphanedName}"?`,
-			'Object Detection',
-			'Image Classification',
+					'Object Detection',
+					'Image Classification',
 					'Instance Segmentation',
 					'Keypoint Detection',
 					'Delete this directory'
@@ -142,9 +111,9 @@ async function selectProject(context: vscode.ExtensionContext): Promise<ProjectI
 		...existingProjects.map(p => ({ 
 			label: p.name, 
 			description: `${p.type === 'object-detection' ? 'Object Detection' : 
-						   p.type === 'image-classification' ? 'Image Classification' : 
-						   		p.type === 'instance-segmentation' ? 'Instance Segmentation' :
-						   'Keypoint Detection'} project`,
+						    p.type === 'image-classification' ? 'Image Classification' : 
+						   	p.type === 'instance-segmentation' ? 'Instance Segmentation' :
+						   	'Keypoint Detection'} project`,
 			id: p.name,
 			projectInfo: p
 		}))
@@ -159,13 +128,13 @@ async function selectProject(context: vscode.ExtensionContext): Promise<ProjectI
 	
 	if (pick.id === 'new') {
 		// Create new project workflow
-		const projectType = await selectProjectType();
+		const projectType = await selectAnnotationType();
 		if (!projectType) {return;}
 		
 		const projectName = await vscode.window.showInputBox({ 
 			prompt: `Enter name for ${projectType === 'object-detection' ? 'Object Detection' : 
 									  projectType === 'image-classification' ? 'Image Classification' : 
-									  		projectType === 'instance-segmentation' ? 'Instance Segmentation' :
+									  projectType === 'instance-segmentation' ? 'Instance Segmentation' :
 									  'Keypoint Detection'} project`,
 			validateInput: (value) => {
 				if (!value || value.trim().length === 0) {
@@ -274,11 +243,12 @@ export function activate(context: vscode.ExtensionContext) {
 		const projectInfo = await selectProject(context);
 		if (projectInfo) {
 			await ensureProjectSetup(projectInfo);
-			vscode.window.showInformationMessage(`Current AnnoVis project: ${projectInfo.name} (${projectInfo.type === 'object-detection' ? 'Object Detection' : 
-																											  projectInfo.type === 'image-classification' ? 'Image Classification' : 
-																											  		projectInfo.type === 'instance-segmentation' ? 'Instance Segmentation' :
-																											  'Keypoint Detection'})`);
-		}
+			vscode.window.showInformationMessage(`Current AnnoVis project: ${projectInfo.name} 
+				(${ projectInfo.type === 'object-detection' ? 'Object Detection' : 
+				    projectInfo.type === 'image-classification' ? 'Image Classification' : 
+					projectInfo.type === 'instance-segmentation' ? 'Instance Segmentation' :
+					'Keypoint Detection'})`);
+}
 	});
 	context.subscriptions.push(setProjCmd);
 
