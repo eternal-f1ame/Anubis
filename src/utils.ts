@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
 
 /**
  * Color palette for annotation labels
@@ -194,4 +195,176 @@ export async function deleteLabelFromProject(project: string, name: string) {
 		await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify(existingData, null, 2)));
 	}
 	return labels;
+}
+
+/**
+ * Configuration for annotation handlers
+ */
+export interface AnnotationHandlerConfig {
+	/** Directory name for storing annotations (e.g., 'annotations', 'classifications') */
+	directory: string;
+	/** VS Code webview panel identifier */
+	panelId: string;
+	/** Human-readable title for the panel */
+	title: string;
+	/** The annotation type identifier */
+	projectType: string;
+	/** Message type for save operation */
+	saveMessageType: string;
+	/** Property name for data in save message */
+	saveDataProperty: string;
+	/** Success message after saving */
+	saveSuccessMessage: string;
+	/** Whether to include Fabric.js */
+	includeFabric?: boolean;
+	/** Data property name for webview injection */
+	dataProperty?: string;
+	/** Custom message handlers */
+	customMessageHandlers?: (msg: any, panel: vscode.WebviewPanel, project: string, target: vscode.Uri) => Promise<boolean>;
+}
+
+/**
+ * Unified annotation handler that eliminates code duplication across all annotation types
+ * @param context VS Code extension context
+ * @param target The target image file URI
+ * @param project The project name
+ * @param config Configuration for the specific annotation type
+ */
+export async function handleAnnotation(
+	context: vscode.ExtensionContext,
+	target: vscode.Uri,
+	project: string,
+	config: AnnotationHandlerConfig
+) {
+	const labels = await readProjectLabels(project);
+	
+	// Load existing data (annotations or classifications)
+	let existingData: any = undefined;
+	try {
+		const root = getWorkspaceRoot();
+		if (root) {
+			const dataPath = vscode.Uri.joinPath(root, '/.annovis', config.directory, project, path.basename(target.fsPath) + '.json');
+			const bytes = await vscode.workspace.fs.readFile(dataPath);
+			const data = JSON.parse(Buffer.from(bytes).toString());
+			
+			// Handle both new metadata format and legacy format
+			if (data.metadata && (data.annotations || data.classification)) {
+				existingData = data.annotations || data.classification;
+			} else if (Array.isArray(data) || data.labels || data.timestamp) {
+				// Legacy formats
+				existingData = data;
+			}
+		}
+	} catch {/* file may not exist – that is fine */}
+
+	// Create webview panel
+	const panel = vscode.window.createWebviewPanel(
+		config.panelId,
+		`${config.title} - ${path.basename(target.fsPath)} (${project})`,
+		vscode.ViewColumn.One, {
+			enableScripts: true,
+			retainContextWhenHidden: true,
+			localResourceRoots: [
+				vscode.Uri.file(path.dirname(target.fsPath)),
+				vscode.Uri.joinPath(context.extensionUri, 'media')
+			]
+		}
+	);
+
+	const imageUri = panel.webview.asWebviewUri(target);
+	const nonce = getNonce();
+
+	// Generate webview content
+	panel.webview.html = generateWebviewContent(
+		panel.webview,
+		context.extensionUri,
+		imageUri.toString(),
+		nonce,
+		labels,
+		existingData,
+		{ 
+			annotationType: config.projectType, 
+			includeFabric: config.includeFabric ?? true, 
+			dataProperty: config.dataProperty ?? 'initialAnnotations' 
+		}
+	);
+
+	// Message handler for webview interactions
+	panel.webview.onDidReceiveMessage(async (msg) => {
+		// Handle custom messages first
+		if (config.customMessageHandlers) {
+			const handled = await config.customMessageHandlers(msg, panel, project, target);
+			if (handled) return;
+		}
+
+		switch (msg.type) {
+			case 'requestAddLabel': {
+				const labelName = await vscode.window.showInputBox({ prompt: 'New label name' });
+				if (!labelName) { return; }
+				const { name, color, removedDefault } = await addLabelToProject(project, labelName);
+				panel.webview.postMessage({ type: 'labelAdded', label: { name, color, removedDefault } });
+				break;
+			}
+			case 'requestRenameLabel': {
+				const current: string = msg.current;
+				const newName = await vscode.window.showInputBox({ prompt: `Rename label '${current}' to:` });
+				if (!newName || newName === current) { return; }
+				const res = await renameLabelInProject(project, current, newName);
+				if (res) {
+					panel.webview.postMessage({ type: 'labelRenamed', oldName: current, newName });
+				}
+				break;
+			}
+			case 'requestDeleteLabel': {
+				const name: string = msg.name;
+				const confirm = await vscode.window.showWarningMessage(`Delete label '${name}' and its ${config.directory}?`, { modal: true }, 'Delete');
+				if (confirm !== 'Delete') { return; }
+				await deleteLabelFromProject(project, name);
+				panel.webview.postMessage({ type: 'labelDeleted', name });
+				break;
+			}
+			case config.saveMessageType: {
+				const dataToSave = msg[config.saveDataProperty];
+				const root = getWorkspaceRoot();
+				if (!root) { return; }
+				
+				const dataDir = vscode.Uri.joinPath(root, '/.annovis', config.directory, project);
+				await vscode.workspace.fs.createDirectory(dataDir);
+				const dataFile = vscode.Uri.joinPath(dataDir, path.basename(target.fsPath) + '.json');
+				
+				// Add metadata to saved data
+				const saveData = {
+					metadata: {
+						projectName: project,
+						projectType: config.projectType as any,
+						imageName: path.basename(target.fsPath),
+						created: new Date().toISOString(),
+						version: '1.0'
+					}
+				};
+				
+				// Add the actual data with appropriate property name
+				if (config.saveDataProperty === 'annotation') {
+					if (config.projectType === 'keypoint-detection') {
+						// Special handling for keypoints which have both annotations and connections
+						(saveData as any).annotations = dataToSave.annotations;
+						(saveData as any).connections = dataToSave.connections;
+					} else {
+						(saveData as any).annotations = dataToSave;
+					}
+				} else if (config.saveDataProperty === 'classification') {
+					(saveData as any).classification = dataToSave;
+				}
+				
+				await vscode.workspace.fs.writeFile(dataFile, Buffer.from(JSON.stringify(saveData, null, 2)));
+				vscode.window.showInformationMessage(config.saveSuccessMessage);
+				break;
+			}
+			case 'showError': {
+				const message: string = msg.message;
+				vscode.window.showErrorMessage(message);
+				break;
+			}
+		}
+	});
 }
