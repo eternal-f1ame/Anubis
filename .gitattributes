@@ -1,0 +1,26 @@
+# Set default behavior to automatically normalize line endings
+* text=auto
+
+# TypeScript and JavaScript files should use LF
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+
+# HTML and CSS files should use LF
+*.html text eol=lf
+*.css text eol=lf
+
+# Markdown files should use LF
+*.md text eol=lf
+
+# Windows batch files should use CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files should not be modified
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.vsix binary

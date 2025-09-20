@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 import * as path from 'path';
 
 /**
@@ -55,7 +54,7 @@ export interface WebviewConfig {
  * @param config Configuration for the specific annotation type
  * @returns The complete HTML string for the webview
  */
-export function generateWebviewContent(
+export async function generateWebviewContent(
 	webview: vscode.Webview,
 	extensionUri: vscode.Uri,
 	imageUrl: string,
@@ -63,11 +62,13 @@ export function generateWebviewContent(
 	labels: { name: string; color: string }[],
 	data?: any,
 	config: WebviewConfig = { annotationType: 'object-detection', includeFabric: true, dataProperty: 'initialAnnotations' }
-): string {
+): Promise<string> {
 	const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'logic', `${config.annotationType}.js`));
 	const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles', `${config.annotationType}.css`));
+	const canvasStyleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles', 'canvas.css'));
 	const htmlPath = vscode.Uri.joinPath(extensionUri, 'media', 'html', `${config.annotationType}.html`);
-	let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
+	const htmlBuffer = await vscode.workspace.fs.readFile(htmlPath);
+	let html = Buffer.from(htmlBuffer).toString('utf8');
 
 	const cspSource = webview.cspSource;
 	let csp = `default-src 'none'; img-src ${cspSource} data: https:; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'`;
@@ -83,6 +84,7 @@ export function generateWebviewContent(
 	html = html.replace(/\${nonce}/g, nonce);
 	html = html.replace(/\${webviewScript}/g, scriptUri.toString());
 	html = html.replace(/\${webviewStylesheet}/g, styleUri.toString());
+	html = html.replace(/\${canvasStylesheet}/g, canvasStyleUri.toString());
 
 	// Add Fabric.js CDN if needed
 	if (config.includeFabric) {
@@ -275,7 +277,7 @@ export async function handleAnnotation(
 	const nonce = getNonce();
 
 	// Generate webview content
-	panel.webview.html = generateWebviewContent(
+	panel.webview.html = await generateWebviewContent(
 		panel.webview,
 		context.extensionUri,
 		imageUri.toString(),

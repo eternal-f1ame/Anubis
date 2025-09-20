@@ -1,108 +1,94 @@
-import * as vscode from 'vscode';
-import * as path from 'path';
-
-const MAX_UNDO_STEPS = 5;
+const MAX_STATES = 5;
 
 export class UndoRedoManager {
-    private cacheDir: vscode.Uri;
-    private currentFile: string;
-    private projectType: string;
-    private undoStack: string[] = [];
-    private redoStack: string[] = [];
+    private statesQueue: any[] = [];
+    private currentPointer: number = -1; // Points to the current state in the queue
 
-    constructor(workspaceRoot: vscode.Uri, project: string, projectType: string, imageFile: string) {
-        this.cacheDir = vscode.Uri.joinPath(workspaceRoot, '/.annovis/.cache', projectType, project);
-        this.currentFile = path.basename(imageFile);
-        this.projectType = projectType;
+    constructor() {
+        // Simplified constructor - no file system operations needed
     }
 
     async initialize() {
-        await vscode.workspace.fs.createDirectory(this.cacheDir);
+        // No initialization needed for in-memory implementation
     }
 
+    /**
+     * Saves a new state to the queue. This is called when a change is made to the canvas
+     * that is NOT from undo/redo operations.
+     */
     async saveState(annotations: any): Promise<void> {
-        const timestamp = Date.now().toString();
-        const filename = `${this.currentFile}_${timestamp}.json`;
-        const filepath = vscode.Uri.joinPath(this.cacheDir, filename);
+        // If we're not at the latest state (i.e., we've used undo), 
+        // remove all states ahead of the current pointer
+        if (this.currentPointer < this.statesQueue.length - 1) {
+            this.statesQueue = this.statesQueue.slice(0, this.currentPointer + 1);
+        }
+
+        // Add the new state
+        this.statesQueue.push(JSON.parse(JSON.stringify(annotations))); // Deep copy
         
-        await vscode.workspace.fs.writeFile(filepath, Buffer.from(JSON.stringify(annotations, null, 2)));
-        
-        this.undoStack.push(filename);
-        if (this.undoStack.length > MAX_UNDO_STEPS) {
-            const toDelete = this.undoStack.shift();
-            if (toDelete) {
-                try {
-                    await vscode.workspace.fs.delete(vscode.Uri.joinPath(this.cacheDir, toDelete));
-                } catch (e) { /* ignore */ }
-            }
+        // If queue exceeds max size, remove the oldest state
+        if (this.statesQueue.length > MAX_STATES) {
+            this.statesQueue.shift();
+        } else {
+            // Only increment pointer if we didn't remove the oldest state
+            this.currentPointer++;
         }
         
-        // Clear redo stack when new state is saved
-        await this.clearRedoStack();
+        // Ensure pointer is at the latest state
+        this.currentPointer = this.statesQueue.length - 1;
     }
 
+    /**
+     * Moves the pointer one step back and returns the previous state.
+     * Returns null if already at the oldest state.
+     */
     async undo(): Promise<any | null> {
-        if (this.undoStack.length <= 1) {
-            return null; // Keep at least one state
+        if (this.currentPointer <= 0) {
+            return null; // Already at the oldest state or no states
         }
         
-        const currentState = this.undoStack.pop();
-        if (currentState) {
-            this.redoStack.push(currentState);
-            if (this.redoStack.length > MAX_UNDO_STEPS) {
-                const toDelete = this.redoStack.shift();
-                if (toDelete) {
-                    try {
-                        await vscode.workspace.fs.delete(vscode.Uri.joinPath(this.cacheDir, toDelete));
-                    } catch (e) { /* ignore */ }
-                }
-            }
-        }
-        
-        const previousState = this.undoStack[this.undoStack.length - 1];
-        if (previousState) {
-            const filepath = vscode.Uri.joinPath(this.cacheDir, previousState);
-            try {
-                const data = await vscode.workspace.fs.readFile(filepath);
-                return JSON.parse(data.toString());
-            } catch (e) {
-                return null;
-            }
-        }
-        return null;
+        this.currentPointer--;
+        return JSON.parse(JSON.stringify(this.statesQueue[this.currentPointer])); // Deep copy
     }
 
+    /**
+     * Moves the pointer one step forward and returns the next state.
+     * Returns null if already at the newest state.
+     */
     async redo(): Promise<any | null> {
-        if (this.redoStack.length === 0) {
-            return null;
+        if (this.currentPointer >= this.statesQueue.length - 1) {
+            return null; // Already at the newest state or no states
         }
         
-        const nextState = this.redoStack.pop();
-        if (nextState) {
-            this.undoStack.push(nextState);
-            const filepath = vscode.Uri.joinPath(this.cacheDir, nextState);
-            try {
-                const data = await vscode.workspace.fs.readFile(filepath);
-                return JSON.parse(data.toString());
-            } catch (e) {
-                return null;
-            }
+        this.currentPointer++;
+        return JSON.parse(JSON.stringify(this.statesQueue[this.currentPointer])); // Deep copy
+    }
+
+    /**
+     * Returns the current state without changing the pointer.
+     */
+    getCurrentState(): any | null {
+        if (this.currentPointer >= 0 && this.currentPointer < this.statesQueue.length) {
+            return JSON.parse(JSON.stringify(this.statesQueue[this.currentPointer])); // Deep copy
         }
         return null;
     }
 
-    private async clearRedoStack(): Promise<void> {
-        for (const filename of this.redoStack) {
-            try {
-                await vscode.workspace.fs.delete(vscode.Uri.joinPath(this.cacheDir, filename));
-            } catch (e) { /* ignore */ }
-        }
-        this.redoStack = [];
+    /**
+     * Returns debug information about the current state of the manager.
+     */
+    getDebugInfo(): { queueLength: number, currentPointer: number, canUndo: boolean, canRedo: boolean } {
+        return {
+            queueLength: this.statesQueue.length,
+            currentPointer: this.currentPointer,
+            canUndo: this.currentPointer > 0,
+            canRedo: this.currentPointer < this.statesQueue.length - 1
+        };
     }
 
     async cleanup(): Promise<void> {
-        try {
-            await vscode.workspace.fs.delete(this.cacheDir, { recursive: true });
-        } catch (e) { /* ignore */ }
+        // Clear all states
+        this.statesQueue = [];
+        this.currentPointer = -1;
     }
 }

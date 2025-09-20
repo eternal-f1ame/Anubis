@@ -1,0 +1,372 @@
+/* =================================================
+   ANNOVIS UNIFIED CANVAS STYLES
+   Common styles shared across all annotation types
+================================================= */
+
+/* -------------------------------------------------
+   Global layout
+--------------------------------------------------*/
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* -------------------------------------------------
+   Toolbar Base Styles
+--------------------------------------------------*/
+#toolbar {
+  background: #222;
+  color: #fff;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  border-bottom: 1px solid #444;
+  flex-wrap: wrap;
+}
+
+.toolbar-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* -------------------------------------------------
+   Button Styles
+--------------------------------------------------*/
+#toolbar button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  background: #0078d4;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.2s;
+}
+
+#toolbar button:hover {
+  background: #106ebe;
+}
+
+#toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #666;
+}
+
+/* Action buttons */
+.action-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  background: #0078d4;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.2s;
+}
+
+.action-btn:hover {
+  background: #106ebe;
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #666;
+}
+
+/* Mode buttons */
+.mode-buttons {
+  display: flex;
+  gap: 2px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.mode-btn {
+  padding: 6px 12px;
+  border: none;
+  background: #444;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+  border-right: 1px solid #555;
+}
+
+.mode-btn:last-child {
+  border-right: none;
+}
+
+.mode-btn:hover {
+  background: #555;
+}
+
+.mode-btn.active {
+  background: #0078d4;
+  color: #fff;
+}
+
+/* Legacy mode column support (for object-detection/keypoint-detection) */
+.mode-column {
+  display: flex !important;
+  flex-direction: column;
+  gap: 2px;
+  margin-right: 8px;
+}
+
+#toolbar .mode-column button {
+  background: #fff;
+  color: #000;
+  border: 1px solid #444;
+  display: block;
+  width: 72px;
+  text-align: center;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+#toolbar .mode-column button.active {
+  background: #4caf50 !important;
+  color: #000 !important;
+}
+
+/* Special button colors */
+#finishPolygonBtn {
+  background: #4caf50;
+}
+
+#finishPolygonBtn:hover {
+  background: #45a049;
+}
+
+#cancelPolygonBtn {
+  background: #f44336;
+}
+
+#cancelPolygonBtn:hover {
+  background: #d32f2f;
+}
+
+#deleteBtn {
+  background: #f44336;
+}
+
+#deleteBtn:hover {
+  background: #d32f2f;
+}
+
+/* -------------------------------------------------
+   Label Selector
+--------------------------------------------------*/
+.label-selector {
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.label-selector select,
+#labelSelect {
+  padding: 4px 8px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #444;
+  color: #fff;
+  font-size: 13px;
+}
+
+/* Legacy support */
+#labelSelect {
+  padding: 2px 4px;
+}
+
+/* -------------------------------------------------
+   Main Content Layout
+--------------------------------------------------*/
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* -------------------------------------------------
+   Sidebar Base Styles
+--------------------------------------------------*/
+#sidebar {
+  width: 200px;
+  background: #1e1e1e;
+  color: #fff;
+  padding: 16px;
+  overflow-y: auto;
+  border-right: 1px solid #444;
+  box-sizing: border-box;
+}
+
+#sidebar h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #444;
+}
+
+#sidebar h4 {
+  margin: 20px 0 8px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #ccc;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: #ccc;
+}
+
+/* Legacy support */
+.sidebar-item {
+  gap: 4px;
+  margin: 2px 0;
+}
+
+.color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid #444;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* -------------------------------------------------
+   Canvas Container
+--------------------------------------------------*/
+#canvasWrap {
+  flex: 1;
+  position: relative;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #1a1a1a;
+}
+
+/* Legacy support */
+#canvasWrap {
+  background: #111; /* Fallback for older styles */
+}
+
+canvas {
+  border: 1px solid #444;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Legacy canvas border */
+canvas {
+  border: 1px solid #888; /* Fallback */
+}
+
+/* Canvas mode cursors */
+canvas.move-mode {
+  cursor: move;
+}
+
+canvas.select-mode {
+  cursor: default;
+}
+
+canvas.polygon-mode {
+  cursor: crosshair;
+}
+
+canvas.edit-mode {
+  cursor: default;
+}
+
+/* -------------------------------------------------
+   Drawing Hints
+--------------------------------------------------*/
+.drawing-hint {
+  margin-top: 16px;
+  padding: 8px;
+  background: #2a2a2a;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #ccc;
+  line-height: 1.4;
+  border-left: 3px solid #0078d4;
+}
+
+/* -------------------------------------------------
+   Feedback Messages
+--------------------------------------------------*/
+.feedback-message {
+  position: fixed;
+  top: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1976d2;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  z-index: 1000;
+  pointer-events: none;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.feedback-message.error {
+  background: #d32f2f;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* -------------------------------------------------
+   Responsive Design
+--------------------------------------------------*/
+@media (max-width: 768px) {
+  #toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .toolbar-section {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .main-content {
+    flex-direction: column;
+  }
+  
+  #sidebar {
+    width: 100%;
+    height: 150px;
+    border-right: none;
+    border-bottom: 1px solid #444;
+  }
+  
+  #canvasWrap {
+    flex: 1;
+    min-height: 300px;
+  }
+}
